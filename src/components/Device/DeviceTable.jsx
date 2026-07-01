@@ -69,6 +69,37 @@ export default function DeviceTable({
                   year: 'numeric'
                 });
 
+
+                const requestDelete = async (device) => {
+                  // 1. ดึงข้อมูล User ปัจจุบันจาก Auth
+                  const { data: { user } } = await supabase.auth.getUser();
+
+                  if (!user) {
+                    alert("กรุณาเข้าสู่ระบบก่อนทำรายการ");
+                    return;
+                  }
+
+                  // 2. Insert ลงตาราง approvals โดยบันทึกอีเมลลงไปตรงๆ
+                  const { error } = await supabase.from('approvals').insert([{
+                    device_id: device.id,
+                    device_name: device.name,
+                    request_type: 'ขอลบข้อมูล',
+                    status: 'รออนุมัติ',
+                    requested_by: user.email, // นี่คือบรรทัดที่เก็บ admin@dcm.com ลงไปในฐานข้อมูล
+                    payload: {
+                      asset_tag: device.asset_tag,
+                      assigned_to: device.assigned_to
+                    }
+                  }]);
+
+                  if (error) {
+                    console.error("Error inserting:", error);
+                    alert("ไม่สามารถส่งคำขอได้: " + error.message);
+                  } else {
+                    alert("ส่งคำขอสำเร็จ");
+                  }
+                };
+
                 if (diffDays < 0) {
                   return (
                     <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold bg-red-100 text-red-700 border border-red-300 shadow-sm animate-pulse">
@@ -142,7 +173,8 @@ export default function DeviceTable({
                       </Button>
 
                       {/* 3. ปุ่ม Delete (ส่งลบ/ขออนุมัติลบ) */}
-                      {/* 3. ปุ่ม Delete (ส่งลบ/ขออนุมัติลบ) */}
+
+
                       <Button
                         variant="ghost"
                         size="icon"

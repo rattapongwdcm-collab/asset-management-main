@@ -8,8 +8,10 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 
+// 🎨 เปลี่ยนสเตตัสสีด้านบนสุดของไฟล์ Repair.jsx
 const statusColors = {
-  'Pending': { bg: 'rgba(245,158,11,0.12)', color: '#f59e0b', text: 'รอดำเนินการ' },
+  'รออนุมัติแจ้งซ่อม': { bg: 'rgba(245,158,11,0.12)', color: '#f59e0b', text: 'รออนุมัติแจ้งซ่อม' },
+  'กำลังซ่อม': { bg: 'rgba(59,130,246,0.12)', color: '#3b82f6', text: 'กำลังซ่อม' },
   'Completed': { bg: 'rgba(16,185,129,0.12)', color: '#10b981', text: 'ซ่อมได้' },
   'Cancelled': { bg: 'rgba(239,68,68,0.12)', color: '#ef4444', text: 'เสีย' },
 };
@@ -35,7 +37,7 @@ export default function Repair() {
     try {
       const [repairsRes, devicesRes] = await Promise.all([
         supabase.from('repairs').select('*').order('created_at', { ascending: false }),
-        supabase.from('devices').select('id, asset_tag, name, assigned_to, status') // 💡 ดึง status ของ device มาด้วย
+        supabase.from('devices').select('id, asset_tag, name, assigned_to, status')
       ]);
 
       setRepairs(repairsRes.data || []);
@@ -60,7 +62,6 @@ export default function Repair() {
     }
   };
 
-  // 1. ตอนกดสร้างใบแจ้งซ่อม -> บันทึกใบซ่อม + อัปเดตสถานะหน้า device เป็น "กำลังแจ้งซ่อม"
   const handleSubmitData = async () => {
     if (!form.device_id || !form.device_name || !form.issue_description.trim() || !form.reported_by.trim()) {
       setError('กรุณากรอกข้อมูลสำคัญให้ครบถ้วน');
@@ -71,8 +72,8 @@ export default function Repair() {
     setError('');
 
     try {
-      // บันทึกใบซ่อมลงตาราง repairs
-      const { error: insertError } = await supabase
+      // 🟢 เด้งที่ 1: บันทึกข้อมูลลงตาราง repairs (ประวัติการแจ้งซ่อม)
+      const { error: insertRepairError } = await supabase
         .from('repairs')
         .insert([
           {
@@ -80,21 +81,41 @@ export default function Repair() {
             device_name: form.device_name,
             reported_by: form.reported_by.trim(),
             issue_description: form.issue_description.trim(),
-            status: 'Pending',
+            status: 'รออนุมัติแจ้งซ่อม', 
             notes: ''
           }
         ]);
 
-      if (insertError) throw insertError;
+      if (insertRepairError) throw insertRepairError;
 
-      // 🔄 อัปเดตสถานะของเครื่องในตาราง devices เป็น "กำลังแจ้งซ่อม"
+      // 🔵 เด้งที่ 2: บันทึกข้อมูลลงตาราง approvals (เพื่อให้ข้อมูลไปโผล่ที่หน้า Approve)
+      const { error: insertApprovalError } = await supabase
+        .from('approvals')
+        .insert([
+          {
+            device_id: form.device_id,
+            device_name: form.device_name,
+            request_type: 'Repair', 
+            requested_by: form.reported_by.trim(),
+            description: form.issue_description.trim(), 
+            note: `ขออนุมัติแจ้งซ่อมอุปกรณ์: ${form.device_name}`,
+            status: 'Pending' 
+          }
+        ]);
+
+      if (insertApprovalError) throw insertApprovalError;
+
+      // 🔄 เด้งที่ 3: ปรับสถานะเครื่องฝั่งตาราง devices เป็น "กำลังแจ้งซ่อม"
       await supabase
         .from('devices')
-        .update({ status: 'กำลังแจ้งซ่อม' }) 
+        .update({ status: 'กำลังแจ้งซ่อม' })
         .eq('id', form.device_id);
 
+      // ล้างฟอร์มและปิด Modal
       setForm({ device_id: '', device_name: '', reported_by: '', issue_description: '' });
       setIsModalOpen(false);
+      
+      // รีโหลดข้อมูลแสดงบนหน้าจอเดิม
       loadData();
 
     } catch (err) {
@@ -103,21 +124,19 @@ export default function Repair() {
       setSaving(false);
     }
   };
-// ⚡ ฟังก์ชันปิดงานซ่อม: ซ่อมได้ (อัปเดตสถานะ) / เสีย (ลบแถวใบซ่อม + ส่งสถานะเสียไปหน้า device)
-// ⚡ ฟังก์ชันปิดงานซ่อม: ซ่อมได้ (ส่งกลับสำรอง + ลบแถว) / เสีย (ส่งกลับเสีย + ลบแถว)
+
+  // 2. จัดการงานซ่อมเสร็จสิ้น -> อัปเดตตารางอุปกรณ์ (สำรอง/เสีย) + ลบแถวประวัติแจ้งซ่อมออกจากตารางทันที
   const handleCloseRepairJob = async (repairId, deviceId, finalStatus) => {
     try {
       if (finalStatus === 'Completed') {
-        // 🟢 กรณี ซ่อมได้: อัปเดตเครื่องเป็น "สำรอง"
         if (deviceId) {
           await supabase
             .from('devices')
             .update({ status: 'สำรอง' })
             .eq('id', deviceId);
         }
-        
+
       } else if (finalStatus === 'Cancelled') {
-        // 🔴 กรณี เสีย: อัปเดตเครื่องเป็น "เสีย"
         if (deviceId) {
           await supabase
             .from('devices')
@@ -126,25 +145,35 @@ export default function Repair() {
         }
       }
 
-      // 🗑️ ลบแถวข้อมูลใบซ่อมนี้ออกจากตาราง repairs ทันที (ทำเหมือนกันทั้งคู่)
       await supabase
         .from('repairs')
         .delete()
         .eq('id', repairId);
 
-      // โหลดข้อมูลใหม่เพื่อล้างแถวออกจากหน้าจอ
       loadData();
     } catch (err) {
       console.error("เกิดข้อผิดพลาดในการจัดการงานซ่อม:", err);
     }
   };
+
+  // 🔍 ระบบค้นหาหน้าตารางแบบครอบคลุมและยืดหยุ่น (กรองฝั่ง Client)
   const filtered = repairs.filter(r => {
+    const searchStr = search.toLowerCase().trim();
+    if (!searchStr) return true;
+
     const matchedDevice = devices.find(d => d.id === r.device_id);
-    const searchStr = search.toLowerCase();
+    const deviceName = (r.device_name || matchedDevice?.name || '').toLowerCase();
+    const assetTag = (matchedDevice?.asset_tag || '').toLowerCase();
+    const reportedBy = (r.reported_by || '').toLowerCase();
+    const issueDesc = (r.issue_description || '').toLowerCase();
+    const statusText = (r.status || '').toLowerCase();
+
     return (
-      r.device_name?.toLowerCase().includes(searchStr) ||
-      matchedDevice?.asset_tag?.toLowerCase().includes(searchStr) ||
-      r.reported_by?.toLowerCase().includes(searchStr)
+      deviceName.includes(searchStr) ||
+      assetTag.includes(searchStr) ||
+      reportedBy.includes(searchStr) ||
+      issueDesc.includes(searchStr) ||
+      statusText.includes(searchStr)
     );
   });
 
@@ -195,7 +224,7 @@ export default function Repair() {
               filtered.map(r => {
                 const d = devices.find(dev => dev.id === r.device_id);
                 const sc = statusColors[r.status] || { bg: 'rgba(107,114,128,0.12)', color: '#6b7280', text: r.status };
-                
+
                 return (
                   <tr key={r.id} className="hover:bg-muted/30">
                     <td className="px-4 py-3 font-mono text-xs">{d?.asset_tag || '-'}</td>
@@ -210,9 +239,8 @@ export default function Repair() {
                     </td>
                     <td className="px-4 py-3 text-right">
                       <div className="flex justify-end gap-1.5">
-                        
-                        {/* แสดงปุ่มจัดการเฉพาะตอนที่ใบซ่อมยังคาอยู่ที่รอดำเนินการ (Pending) */}
-                        {r.status === 'Pending' && (
+
+                        {r.status === 'กำลังซ่อม' && (
                           <>
                             {/* ปุ่ม ซ่อมได้ */}
                             <Button
@@ -238,8 +266,8 @@ export default function Repair() {
                           </>
                         )}
 
-                        {r.status !== 'Pending' && (
-                          <span className="text-xs text-muted-foreground px-3">ปิดงานแล้ว</span>
+                        {r.status === 'รออนุมัติแจ้งซ่อม' && (
+                          <span className="text-xs text-amber-600 bg-amber-50 px-2.5 py-1 rounded-md font-medium">⏳ รออนุมัติจากหัวหน้า</span>
                         )}
 
                       </div>
@@ -277,12 +305,14 @@ export default function Repair() {
                   <SelectValue placeholder="เลือกตามรหัสทรัพย์สิน หรือ ชื่อเครื่อง" />
                 </SelectTrigger>
                 <SelectContent>
-                  {/* 💡 แสดงเฉพาะอุปกรณ์ที่ยังมีสถานะเปิดใช้งานอยู่ หรือปรับตัวกรองตามหน้าเครื่องของคุณได้เลยครับ */}
-                  {devices.map((dev) => (
-                    <SelectItem key={dev.id} value={dev.id} className="text-xs">
-                      [{dev.asset_tag || 'ไม่มีรหัส'}] {dev.name} {dev.status ? `(${dev.status})` : ''}
-                    </SelectItem>
-                  ))}
+                  {/* 💡 ใส่ฟิลเตอร์เพื่อซ่อนเครื่องที่ "กำลังแจ้งซ่อม" และ "กำลังซ่อม" ทันที */}
+                  {devices
+                    .filter(dev => dev.status !== 'กำลังแจ้งซ่อม' && dev.status !== 'กำลังซ่อม')
+                    .map((dev) => (
+                      <SelectItem key={dev.id} value={dev.id} className="text-xs">
+                        [{dev.asset_tag || 'ไม่มีรหัส'}] {dev.name} {dev.status ? `(${dev.status})` : ''}
+                      </SelectItem>
+                    ))}
                 </SelectContent>
               </Select>
             </div>
@@ -320,7 +350,7 @@ export default function Repair() {
               ยกเลิก
             </Button>
             <Button type="button" onClick={handleSubmitData} disabled={saving} className="text-xs">
-              {saving ? 'กำลังบันทึก...' : 'ยืนยันการแจ้งซ่อม'}
+              {saving ? 'กำลังส่งคำขอ...' : 'ขออนุมัติแจ้งซ่อม'}
             </Button>
           </DialogFooter>
         </DialogContent>
