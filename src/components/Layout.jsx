@@ -18,25 +18,29 @@ export default function Layout() {
   const [isAdmin, setIsAdmin] = useState(false);
 
   useEffect(() => {
-    const checkUserRole = async () => {
-      const { data: { user } } = await supabase.auth.getUser();
-      
-      const userRole = user?.user_metadata?.role; 
+  const checkUserRole = async () => {
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) return;
 
-      if (userRole === 'admin' || user?.email === 'admin@yourdomain.com') { 
-        setIsAdmin(true);
-        
-        // 2. ➕ เพิ่มเมนู History ต่อท้าย "งานรออนุมัติ" ในกรณีที่เป็นสิทธิ์ Admin
-        setNavItems([
-          ...baseNavItems,
-          { label: 'งานรออนุมัติ', path: '/approve', icon: ClipboardCheck },
-          { label: 'History', path: '/history', icon: History } // เมนูใหม่ต่อท้ายวงสีแดงตามต้องการ 🎯
-        ]);
-      }
-    };
+    // 🟢 ดึง role จากตาราง profiles โดยตรง (แม่นยำกว่า)
+    const { data: profile } = await supabase
+      .from('profiles')
+      .select('role')
+      .eq('id', user.id)
+      .single();
 
-    checkUserRole();
-  }, []);
+    if (profile?.role === 'admin') {
+      setIsAdmin(true);
+      setNavItems([
+        ...baseNavItems,
+        { label: 'งานรออนุมัติ', path: '/approve', icon: ClipboardCheck },
+        { label: 'History', path: '/history', icon: History }
+      ]);
+    }
+  };
+
+  checkUserRole();
+}, []);
 
   const handleLogout = async () => {
     await supabase.auth.signOut();

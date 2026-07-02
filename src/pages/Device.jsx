@@ -78,7 +78,7 @@ export default function Device() {
             table: 'devices',
           },
           (payload) => {
-            console.log('Detected external database changes:', payload);
+            // console.log('Detected external database changes:', payload);
             load(); // 🔄 บัญชีอื่นแก้ไขปุ๊บ ระบบจะสั่งคิวรีดึงข้อมูลใหม่มาอัปเดตหน้าจอทันทีแบบออโต้!
           }
         )

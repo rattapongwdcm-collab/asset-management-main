@@ -2,15 +2,48 @@ import React from 'react';
 // 📝 เพิ่มไอคอน Pencil เข้ามาใช้งาน
 import { Monitor, Eye, Pencil, Trash2, CalendarDays, AlertTriangle, CheckCircle2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-
+import { supabase } from '@/lib/supabase';
+import DeleteConfirmDialog from '@/components/Device/DeleteConfirmDialog';
 export default function DeviceTable({
   loading,
   filtered,
   statusColors,
   setDetailItem,
   setEditItem, // ➕ เพิ่มฟังก์ชันสำหรับรับค่าเพื่อแก้ไขข้อมูลเครื่อง
-  setDeleteId
+  setDeleteId,
+  deleteId, // 🟢 เพิ่มบรรทัดนี้เข้าไปครับ
+  fetchDevices // 🟢 และเพิ่มอันนี้ด้วยถ้าคุณใช้งานมันใน handleDelete
 }) {
+  const handleDelete = async (deviceId) => {
+    // ดึงข้อมูลอุปกรณ์จาก ID (สมมติว่าคุณเก็บข้อมูลอุปกรณ์ไว้ใน state ชื่อ devices)
+    const device = devices.find(d => d.id === deviceId);
+
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) return;
+
+    try {
+      await Promise.all([
+        supabase.from('approvals').insert([{
+          device_id: device.id,
+          device_name: device.name,
+          request_type: 'delete',
+          status: 'Pending',
+          user_id: user.id,
+          description: `ขอลบอุปกรณ์ ${device.asset_tag || ''}`
+        }]),
+        supabase.from('devices')
+          .update({ status: 'รออนุมัติลบ' })
+          .eq('id', device.id)
+      ]);
+
+      // รีเฟรชข้อมูลในหน้าจอ (สำคัญมากเพื่อให้สถานะเปลี่ยนทันที)
+      fetchDevices();
+      alert("ส่งคำขออนุมัติลบสำเร็จ");
+    } catch (error) {
+      console.error("Error:", error);
+      alert("เกิดข้อผิดพลาด: " + error.message);
+    }
+  };
   // สถานะกำลังโหลด
   if (loading) {
     return (
@@ -179,27 +212,32 @@ export default function DeviceTable({
                         variant="ghost"
                         size="icon"
                         className="h-8 w-8 text-destructive hover:text-destructive"
-                        // 🔒 ล็อกปุ่มไม่ให้กดเพิ่ม ถ้าสถานะเป็น 'รออนุมัติลบ' หรือ 'รออนุมัติแก้ไข'
-                        disabled={d.status === 'รออนุมัติลบ' || d.status === 'รออนุมัติแก้ไข'}
+                        disabled={d.status === 'รออนุมัติลบ' || d.status === 'รออนุมัติแก้ไข' || d.status === 'กำลังซ่อม'}
                         onClick={(e) => {
                           e.stopPropagation();
+
+                          // 🟢 แก้ไขตรงนี้: ลบ requestDelete(d) ออก แล้วใส่ setDeleteId(d.id) แทน
                           setDeleteId(d.id);
                         }}
                       >
-                        <Trash2
-                          size={14}
-                          // 🎨 ทำให้ไอคอนจางลงเมื่อถูกล็อก
-                          className={(d.status === 'รออนุมัติลบ' || d.status === 'รออนุมัติแก้ไข') ? 'opacity-30 cursor-not-allowed' : ''}
-                        />
+                        <Trash2 size={14} className={(d.status === 'รออนุมัติลบ') ? 'opacity-30' : ''} />
                       </Button>
                     </div>
                   </td>
                 </tr>
               );
+
             })}
+
           </tbody>
         </table>
       </div>
+      <DeleteConfirmDialog
+        deleteId={deleteId}
+        setDeleteId={setDeleteId}
+        handleDelete={handleDelete} // ส่งฟังก์ชันที่ปรับปรุงแล้วเข้าไป
+        deviceName={filtered.find(d => d.id === deleteId)?.name}
+      />
     </div>
   );
 }
