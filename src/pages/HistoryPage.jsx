@@ -21,12 +21,6 @@ export default function HistoryPage() {
             ตรวจสอบบันทึกการเพิ่ม ลบ แก้ไข ข้อมูลอุปกรณ์และสินทรัพย์ไอทีทั้งหมด
           </p>
         </div>
-
-        {/* ปุ่มสำหรับ Export ข้อมูล */}
-        <Button variant="outline" size="sm" className="h-9 gap-1.5 self-start sm:self-auto hover:bg-[#111827] hover:text-white">
-          <ArrowDownToLine size={14} />
-          Export Logs
-        </Button>
       </div>
 
         <div className="relative flex-1 min-w-48">

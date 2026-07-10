@@ -7,126 +7,198 @@ export default function Approve() {
   const [approvals, setApprovals] = useState([]);
   const [loading, setLoading] = useState(true);
   const [submittingId, setSubmittingId] = useState(null);
-  const [userRole, setUserRole] = useState(null); // 🟢 เพิ่ม state เก็บ role
+  const [userRole, setUserRole] = useState(null);
+  const [confirmAction, setConfirmAction] = useState({ open: false, item: null, type: '' });
 
   const loadData = async () => {
     setLoading(true);
+    // ... (ส่วนดึง user role เหมือนเดิม) ...
 
-    // 1. ตรวจสอบสิทธิ์ผู้ใช้งานปัจจุบัน
-    const { data: { user } } = await supabase.auth.getUser();
-    if (user) {
-      const { data: profile } = await supabase
-        .from('profiles')
-        .select('role')
-        .eq('id', user.id)
-        .single();
-      if (profile) setUserRole(profile.role);
-    }
-
-    // 2. ดึงข้อมูลคำขอ
     const { data, error } = await supabase
-    .from('approvals')
-    .select(`
-      *,
-      profiles:user_id (
-        email
-      )
-    `) // 🟢 เพิ่มส่วนนี้เพื่อดึงอีเมลจากตาราง profiles ที่เชื่อมกับ user_id
-    .order('created_at', { ascending: false });
-      console.log("Data loaded from Supabase:", data);
-  if (data) {
-    setApprovals(data);
-  }
-};
+      .from('approvals')
+      .select('*, profiles (email), devices (name, asset_tag)')
+      .eq('status', 'Pending') // 🟢 เพิ่มบรรทัดนี้: กรองเอาเฉพาะงานที่ยังรออนุมัติ
+      .order('created_at', { ascending: false });
 
-    useEffect(() => { loadData(); }, []);
+    if (error) {
+      console.error("Error loading data:", error);
+    } else {
+      setApprovals(data || []);
+    }
+    setLoading(false);
+  };
 
-    const handleAction = async (item, action) => {
-      // เพิ่มการป้องกันสิทธิ์ซ้ำอีกชั้นที่ฟังก์ชันนี้
-      if (userRole !== 'admin') {
-        alert("คุณไม่มีสิทธิ์ดำเนินการนี้");
-        return;
+  useEffect(() => { loadData(); }, []);
+
+  const handleExecuteAction = async () => {
+    const { item, type } = confirmAction;
+    setSubmittingId(item.id);
+    const requestType = (item.request_type || '').trim().toLowerCase();
+
+    try {
+      if (type === 'approve') {
+        if (requestType === 'repair') {
+          const { error: repairError } = await supabase
+            .from('repairs')
+            .update({ status: 'กำลังซ่อม' })
+            .eq('id', item.repair_id);
+          if (repairError) throw repairError;
+
+          const { error: statusError } = await supabase
+            .from('devices')
+            .update({ status: 'กำลังซ่อม' })
+            .eq('id', item.device_id);
+          if (statusError) throw statusError;
+        }
+        else if (requestType === 'edit') {
+          const { error: editError } = await supabase
+            .from('devices')
+            .update(item.changed_fields)
+            .eq('id', item.device_id);
+          if (editError) throw editError;
+
+          const { error: statusError } = await supabase
+            .from('devices')
+            .update({ status: 'ใช้งาน' })
+            .eq('id', item.device_id);
+          if (statusError) throw statusError;
+        }
+        else if (requestType === 'move') {
+          const { department, assigned_to } = item.changed_fields || {};
+
+          const { error: moveError } = await supabase
+            .from('devices')
+            .update({
+              department,
+              assigned_to,
+              status: 'ใช้งาน'
+            })
+            .eq('id', item.device_id);   // ✅ ใช้ id แทน
+          if (moveError) throw moveError;
+        }
+        else if (requestType === 'delete') {
+          const { error: cleanupError } = await supabase
+            .from('approvals')
+            .delete()
+            .eq('device_id', item.device_id);
+          if (cleanupError) throw cleanupError;
+
+          const { error: deleteError } = await supabase
+            .from('devices')
+            .delete()
+            .eq('id', item.device_id);
+          if (deleteError) throw deleteError;
+
+          await loadData();
+          alert("ดำเนินการสำเร็จ");
+          setSubmittingId(null);
+          setConfirmAction({ open: false, item: null, type: '' });
+          return;
+        }
+        else {
+          throw new Error(`ไม่รู้จัก request_type: "${item.request_type}"`);
+        }
       }
-
-      setSubmittingId(item.id);
-      try {
-        const type = (item.request_type || '').toLowerCase();
-
-        if (action === 'approve') {
-          if (type === 'repair') {
-            await supabase.from('repairs').insert([{
-              device_id: item.device_id,
-              device_name: item.device_name,
-              issue_description: item.description,
-              status: 'Pending'
-            }]);
-            await supabase.from('devices').update({ status: 'กำลังซ่อม' }).eq('id', item.device_id);
-          } else if (type === 'edit') {
-            await supabase.from('devices').update(item.changed_fields).eq('id', item.device_id);
-          } else if (type === 'delete') {
-            await supabase.from('devices').delete().eq('id', item.device_id);
-          } else {
-            await supabase.from('devices').update({ status: 'ใช้งาน' }).eq('id', item.device_id);
-          }
-        } else {
-          await supabase.from('devices').update({ status: 'ใช้งาน' }).eq('id', item.device_id);
+      else if (type === 'reject') {
+        if (requestType === 'repair' && item.repair_id) {
+          const { error: deleteRepairError } = await supabase
+            .from('repairs')
+            .delete()
+            .eq('id', item.repair_id);
+          if (deleteRepairError) throw deleteRepairError;
         }
 
-        await supabase.from('approvals').update({ status: action === 'approve' ? 'Approved' : 'Rejected' }).eq('id', item.id);
-        alert(`ดำเนินการ ${action === 'approve' ? 'อนุมัติ' : 'ปฏิเสธ'} เรียบร้อย`);
-        loadData();
-      } catch (err) {
-        alert("Error: " + err.message);
-      } finally {
-        setSubmittingId(null);
+        // repair, edit, move ที่ถูกปฏิเสธ -> คืนสถานะเครื่องกลับเป็น "ใช้งาน" เสมอ
+        const { error: revertError } = await supabase
+          .from('devices')
+          .update({ status: 'ใช้งาน' })
+          .eq('id', item.device_id);
+        if (revertError) throw revertError;
       }
-    };
 
-    return (
-      <div className="space-y-6 p-6">
-        <h2 className="text-2xl font-bold flex items-center gap-2">
-          <ClipboardCheck className="text-primary" /> งานรออนุมัติ ({approvals.length})
-        </h2>
+      // ปิดคำขอใน approvals (ยกเว้นกรณี delete approve ที่ return ไปแล้วด้านบน)
+      const { error: closeError } = await supabase
+        .from('approvals')
+        .update({ status: type === 'approve' ? 'Approved' : 'Rejected' })
+        .eq('id', item.id);
+      if (closeError) throw closeError;
 
-        <div className="bg-card border rounded-lg shadow-sm">
-          <table className="w-full text-sm">
-            <thead className="bg-muted/50">
-              <tr>
-                <th className="px-4 py-3 text-left">วันที่</th>
-                <th className="px-4 py-3 text-left">ผู้ขอ</th>
-                <th className="px-4 py-3 text-left">รหัสอุปกรณ์</th>
-                <th className="px-4 py-3 text-left">ชื่ออุปกรณ์</th>
-                <th className="px-4 py-3 text-left">ประเภท</th>
-                <th className="px-4 py-3 text-center">จัดการ</th>
+      await loadData();
+      alert("ดำเนินการสำเร็จ");
+    } catch (err) {
+      alert("เกิดข้อผิดพลาด: " + err.message);
+    } finally {
+      setSubmittingId(null);
+      setConfirmAction({ open: false, item: null, type: '' });
+    }
+  };
+  return (
+    <div className="space-y-6 p-6">
+      <h2 className="text-2xl font-bold flex items-center gap-2">
+        <ClipboardCheck className="text-primary" /> งานรออนุมัติ ({approvals.length})
+      </h2>
+
+      <div className="bg-card border rounded-lg shadow-sm">
+        <table className="w-full text-sm">
+          <thead className="bg-muted/50">
+            <tr>
+              <th className="px-4 py-3 text-left">วันที่</th>
+              <th className="px-4 py-3 text-left">ผู้ขอ</th>
+              <th className="px-4 py-3 text-left">รหัสอุปกรณ์</th>
+              <th className="px-4 py-3 text-left">ชื่ออุปกรณ์</th>
+              <th className="px-4 py-3 text-left">ประเภท</th>
+              <th className="px-4 py-3 text-center">จัดการ</th>
+            </tr>
+          </thead>
+          <tbody>
+            {approvals.map((item) => (
+              <tr key={item.id} className="border-b">
+                <td className="px-4 py-3">{new Date(item.created_at).toLocaleString('th-TH')}</td>
+                <td className="px-4 py-3">{item.profiles?.email || '—'}</td>
+                <td className="px-4 py-3">{item.devices?.asset_tag || item.description || '—'}</td>
+                <td className="px-4 py-3">{item.devices?.name || item.device_name || '—'}</td>
+                <td className="px-4 py-3 font-semibold capitalize">{item.request_type}</td>
+                <td className="px-4 py-3 flex justify-center gap-2">
+                  <>
+                    <Button
+                      size="sm"
+                      onClick={() => setConfirmAction({ open: true, item, type: 'approve' })}
+                      disabled={submittingId === item.id}
+                    >
+                      <Check size={16} />
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant="destructive"
+                      onClick={() => setConfirmAction({ open: true, item, type: 'reject' })}
+                      disabled={submittingId === item.id}
+                    >
+                      <X size={16} />
+                    </Button>
+                  </>
+                </td>
               </tr>
-            </thead>
-            <tbody>
-              {approvals.map(item => (
-                <tr key={item.id} className="border-b">
-                  <td className="px-4 py-3">{new Date(item.created_at).toLocaleString('th-TH')}</td>
-                  <td className="px-4 py-3">{item.profiles?.email || item.user_id}</td>
-                  <td className="px-4 py-3">{item.approvals?.asset_tag || item.asset_tag}</td>
-                  <td className="px-4 py-3">{item.devices?.name || item.device_name}</td>
-                  <td className="px-4 py-3 font-semibold capitalize">{item.request_type}</td>
-                  <td className="px-4 py-3 flex justify-center gap-2">
-                    {userRole === 'admin' ? ( // 🟢 เช็คสิทธิ์ก่อนแสดงปุ่ม
-                      <>
-                        <Button size="sm" onClick={() => handleAction(item, 'approve')} disabled={submittingId === item.id}>
-                          {submittingId === item.id ? '...' : <Check size={16} />}
-                        </Button>
-                        <Button size="sm" variant="destructive" onClick={() => handleAction(item, 'reject')} disabled={submittingId === item.id}>
-                          <X size={16} />
-                        </Button>
-                      </>
-                    ) : (
-                      <span className="text-xs text-muted-foreground italic">ไม่มีสิทธิ์</span>
-                    )}
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+            ))}
+          </tbody>
+        </table>
       </div>
-    );
-  }
+
+      {confirmAction.open && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+          <div className="bg-white p-6 rounded-lg shadow-2xl max-w-sm w-full border border-gray-200">
+            <h3 className="text-lg font-bold text-gray-900">
+              ยืนยันการ{confirmAction.type === 'approve' ? 'อนุมัติ' : 'ปฏิเสธ'}?
+            </h3>
+            <p className="text-sm text-muted-foreground mt-2 mb-6">คุณต้องการดำเนินการกับรายการนี้ใช่หรือไม่?</p>
+            <div className="flex justify-end gap-2">
+              <Button className="hover:bg-[#111827] hover:text-white"
+                variant="outline" onClick={() => setConfirmAction({ ...confirmAction, open: false })}>ยกเลิก</Button>
+              <Button className="hover:bg-[#111827] hover:text-white"
+                variant="outline variant={confirmAction.type === 'approve' ? 'default' : 'destructive'} " onClick={handleExecuteAction}>ยืนยัน</Button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}

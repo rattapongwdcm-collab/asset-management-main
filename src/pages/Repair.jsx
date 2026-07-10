@@ -27,6 +27,7 @@ export default function Repair() {
   const [form, setForm] = useState({
     device_id: '',
     device_name: '',
+    asset_tag: '', // เพิ่มตรงนี้ด้วยครับ
     reported_by: '',
     issue_description: '',
   });
@@ -49,78 +50,99 @@ export default function Repair() {
     }
   };
 
-  useEffect(() => { loadData(); }, []);
+  useEffect(() => {
+    loadData();
+  }, []);
 
+  // 2. ล้างฟอร์มทุกครั้งที่เปิด Modal
+  useEffect(() => {
+    if (isModalOpen) {
+      setForm({
+        device_id: '',
+        device_name: '',
+        reported_by: '',
+        issue_description: '',
+      });
+      setError('');
+    }
+  }, [isModalOpen]);
   const handleDeviceChange = (deviceId) => {
     const selectedDevice = devices.find(d => d.id === deviceId);
     if (selectedDevice) {
       setForm(prev => ({
         ...prev,
         device_id: deviceId,
-        device_name: selectedDevice.name
+        device_name: selectedDevice.name,
+        asset_tag: selectedDevice.asset_tag // เพิ่มบรรทัดนี้ เพื่อเก็บรหัสทรัพย์สินไว้ใน form
       }));
     }
   };
 
   const handleSubmitData = async () => {
-    if (!form.device_id || !form.device_name || !form.issue_description.trim() || !form.reported_by.trim()) {
-      setError('กรุณากรอกข้อมูลสำคัญให้ครบถ้วน');
+    // 1. ตรวจสอบข้อมูลเบื้องต้น
+    if (!form.device_id || !form.issue_description.trim() || !form.reported_by.trim()) {
+      setError('กรุณากรอกข้อมูลให้ครบถ้วน');
+      return;
+    }
+
+    // 2. ดึงข้อมูล User ปัจจุบัน (แก้ไขจุดที่ทำให้เกิด Error)
+    const { data: { user } } = await supabase.auth.getUser();
+
+    // 3. ดึงข้อมูลอุปกรณ์จาก State 'devices'
+    const selectedDevice = devices.find(d => d.id === form.device_id);
+    if (!selectedDevice) {
+      setError('ไม่พบข้อมูลอุปกรณ์ในระบบ');
       return;
     }
 
     setSaving(true);
     setError('');
 
-    try {
-      // 🟢 เด้งที่ 1: บันทึกข้อมูลลงตาราง repairs (ประวัติการแจ้งซ่อม)
-      const { error: insertRepairError } = await supabase
-        .from('repairs')
-        .insert([
-          {
-            device_id: form.device_id,
-            device_name: form.device_name,
-            reported_by: form.reported_by.trim(),
-            issue_description: form.issue_description.trim(),
-            status: 'รออนุมัติแจ้งซ่อม', 
-            notes: ''
-          }
-        ]);
+ try {
+  // 4. บันทึกประวัติการแจ้งซ่อม (repairs) — ดึง id ที่ insert ได้กลับมาด้วย
+  const { data: repairData, error: insertRepairError } = await supabase
+    .from('repairs')
+    .insert([{
+      device_id: form.device_id,
+      device_name: selectedDevice.name,
+      reported_by: form.reported_by.trim(),
+      issue_description: form.issue_description.trim(),
+      status: 'รออนุมัติแจ้งซ่อม'
+    }])
+    .select()
+    .single();
+  if (insertRepairError) throw insertRepairError;
 
-      if (insertRepairError) throw insertRepairError;
+  // 5. บันทึกข้อมูลเข้าตาราง approvals — ผูก repair_id ไว้ด้วย + แก้ request_type เป็นตัวเล็กให้ตรงกับ Approve.jsx
+  const { error: insertApprovalError } = await supabase
+    .from('approvals')
+    .insert([{
+      device_id: form.device_id,
+      device_name: form.device_name,
+      description: form.issue_description.trim(),
+      request_type: 'repair',      // ✅ แก้เป็นตัวเล็กให้ตรงกับเงื่อนไขใน Approve.jsx
+      repair_id: repairData.id,    // ✅ เก็บ id ของแถว repairs ไว้อ้างอิง
+      requested_by: form.reported_by.trim(),
+      status: 'Pending',
+      user_id: user?.id || null
+    }]);
 
-      // 🔵 เด้งที่ 2: บันทึกข้อมูลลงตาราง approvals (เพื่อให้ข้อมูลไปโผล่ที่หน้า Approve)
-      const { error: insertApprovalError } = await supabase
-        .from('approvals')
-        .insert([
-          {
-            device_id: form.device_id,
-            device_name: form.device_name,
-            request_type: 'Repair', 
-            requested_by: form.reported_by.trim(),
-            description: form.issue_description.trim(), 
-            note: `ขออนุมัติแจ้งซ่อมอุปกรณ์: ${form.device_name}`,
-            status: 'Pending' 
-          }
-        ]);
+  if (insertApprovalError) throw insertApprovalError;
 
-      if (insertApprovalError) throw insertApprovalError;
+  // 6. อัปเดตสถานะเครื่องในตาราง devices
+  const { error: statusError } = await supabase
+    .from('devices')
+    .update({ status: 'กำลังแจ้งซ่อม' })
+    .eq('id', form.device_id);
+  if (statusError) throw statusError;
 
-      // 🔄 เด้งที่ 3: ปรับสถานะเครื่องฝั่งตาราง devices เป็น "กำลังแจ้งซ่อม"
-      await supabase
-        .from('devices')
-        .update({ status: 'กำลังแจ้งซ่อม' })
-        .eq('id', form.device_id);
+  setIsModalOpen(false);
+  loadData();
 
-      // ล้างฟอร์มและปิด Modal
-      setForm({ device_id: '', device_name: '', reported_by: '', issue_description: '' });
-      setIsModalOpen(false);
-      
-      // รีโหลดข้อมูลแสดงบนหน้าจอเดิม
-      loadData();
-
-    } catch (err) {
-      setError('เกิดข้อผิดพลาด: ' + err.message);
-    } finally {
+} catch (err) {
+  console.error("รายละเอียด Error:", err);
+  setError('บันทึกข้อมูลไม่สำเร็จ: ' + err.message);
+} finally {
       setSaving(false);
     }
   };
@@ -158,24 +180,33 @@ export default function Repair() {
 
   // 🔍 ระบบค้นหาหน้าตารางแบบครอบคลุมและยืดหยุ่น (กรองฝั่ง Client)
   const filtered = repairs.filter(r => {
-    const searchStr = search.toLowerCase().trim();
-    if (!searchStr) return true;
+  const searchStr = search.toLowerCase().trim();
 
-    const matchedDevice = devices.find(d => d.id === r.device_id);
-    const deviceName = (r.device_name || matchedDevice?.name || '').toLowerCase();
-    const assetTag = (matchedDevice?.asset_tag || '').toLowerCase();
-    const reportedBy = (r.reported_by || '').toLowerCase();
-    const issueDesc = (r.issue_description || '').toLowerCase();
-    const statusText = (r.status || '').toLowerCase();
+  // 1. เช็กสถานะ (ลองทำล้างช่องว่างเผื่อไว้เพื่อความปลอดภัย)
+  const currentStatus = (r.status || '').trim();
+  const isRelevantStatus = currentStatus === 'รออนุมัติแจ้งซ่อม' || currentStatus === 'กำลังซ่อม';
+  
+  if (!isRelevantStatus) return false;
+  if (!searchStr) return true;
 
-    return (
-      deviceName.includes(searchStr) ||
-      assetTag.includes(searchStr) ||
-      reportedBy.includes(searchStr) ||
-      issueDesc.includes(searchStr) ||
-      statusText.includes(searchStr)
-    );
-  });
+  // 2. จับคู่อุปกรณ์
+  const matchedDevice = devices.find(d => d.id === r.device_id);
+  
+  // ใช้ข้อมูลจากตัวใบซ่อมเอง (r.device_name) สำรองไว้ด้วย เผื่อจับคู่ใน devices ไม่เจอ
+  const deviceName = (r.device_name || matchedDevice?.name || '').toLowerCase();
+  const assetTag = (matchedDevice?.asset_tag || '').toLowerCase();
+  const reportedBy = (r.reported_by || '').toLowerCase();
+  const issueDesc = (r.issue_description || '').toLowerCase();
+  const statusText = currentStatus.toLowerCase();
+
+  return (
+    deviceName.includes(searchStr) ||
+    assetTag.includes(searchStr) ||
+    reportedBy.includes(searchStr) ||
+    issueDesc.includes(searchStr) ||
+    statusText.includes(searchStr)
+  );
+});
 
   return (
     <div className="space-y-5">
@@ -307,7 +338,7 @@ export default function Repair() {
                 <SelectContent>
                   {/* 💡 ใส่ฟิลเตอร์เพื่อซ่อนเครื่องที่ "กำลังแจ้งซ่อม" และ "กำลังซ่อม" ทันที */}
                   {devices
-                    .filter(dev => dev.status !== 'กำลังแจ้งซ่อม' && dev.status !== 'กำลังซ่อม')
+                    .filter(dev => dev.status === 'ใช้งาน') // กรองให้แสดงเฉพาะสถานะ 'ใช้งาน' เท่านั้น
                     .map((dev) => (
                       <SelectItem key={dev.id} value={dev.id} className="text-xs">
                         [{dev.asset_tag || 'ไม่มีรหัส'}] {dev.name} {dev.status ? `(${dev.status})` : ''}
@@ -316,13 +347,6 @@ export default function Repair() {
                 </SelectContent>
               </Select>
             </div>
-
-            {form.device_id && (
-              <div className="p-2.5 bg-muted/40 rounded-lg border text-[11px] text-muted-foreground space-y-0.5">
-                <p><span className="font-semibold text-foreground/70">ชื่ออุปกรณ์ในระบบ:</span> {form.device_name}</p>
-                <p><span className="font-semibold text-foreground/70">ผู้รับผิดชอบเครื่องปัจจุบัน:</span> {devices.find(d => d.id === form.device_id)?.assigned_to || '-'}</p>
-              </div>
-            )}
 
             <div className="space-y-1.5">
               <Label className="text-xs font-bold text-foreground/80">บัญชีผู้ดำเนินการ / ผู้แจ้งเรื่อง <span className="text-red-500">*</span></Label>

@@ -1,42 +1,46 @@
 import React from 'react';
-// 📝 เพิ่มไอคอน Pencil เข้ามาใช้งาน
-import { Monitor, Eye, Pencil, Trash2, CalendarDays, AlertTriangle, CheckCircle2 } from 'lucide-react';
+import { Monitor, Eye, ArrowRightLeft, Trash2, CalendarDays, AlertTriangle, CheckCircle2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { supabase } from '@/lib/supabase';
 import DeleteConfirmDialog from '@/components/Device/DeleteConfirmDialog';
+
 export default function DeviceTable({
   loading,
   filtered,
   statusColors,
   setDetailItem,
-  setEditItem, // ➕ เพิ่มฟังก์ชันสำหรับรับค่าเพื่อแก้ไขข้อมูลเครื่อง
+  setEditItem, // ➕ เปิด Dialog เคลื่อนย้าย (ไม่ใช่แก้ไขทั่วไปแล้ว)
   setDeleteId,
-  deleteId, // 🟢 เพิ่มบรรทัดนี้เข้าไปครับ
-  fetchDevices // 🟢 และเพิ่มอันนี้ด้วยถ้าคุณใช้งานมันใน handleDelete
+  deleteId,
+  fetchDevices
 }) {
   const handleDelete = async (deviceId) => {
-    // ดึงข้อมูลอุปกรณ์จาก ID (สมมติว่าคุณเก็บข้อมูลอุปกรณ์ไว้ใน state ชื่อ devices)
-    const device = devices.find(d => d.id === deviceId);
+    const device = filtered.find(d => d.id === deviceId);
+    if (!device) return;
 
     const { data: { user } } = await supabase.auth.getUser();
-    if (!user) return;
+    if (!user) {
+      alert("กรุณาเข้าสู่ระบบก่อนทำรายการ");
+      return;
+    }
 
     try {
-      await Promise.all([
-        supabase.from('approvals').insert([{
-          device_id: device.id,
-          device_name: device.name,
-          request_type: 'delete',
-          status: 'Pending',
-          user_id: user.id,
-          description: `ขอลบอุปกรณ์ ${device.asset_tag || ''}`
-        }]),
-        supabase.from('devices')
-          .update({ status: 'รออนุมัติลบ' })
-          .eq('id', device.id)
-      ]);
+      const { error: approvalError } = await supabase.from('approvals').insert([{
+        device_id: device.id,
+        device_name: device.name,
+        request_type: 'delete',
+        status: 'Pending',
+        user_id: user.id,
+        description: `ขอลบอุปกรณ์ ${device.asset_tag || ''}`
+      }]);
+      if (approvalError) throw approvalError;
 
-      // รีเฟรชข้อมูลในหน้าจอ (สำคัญมากเพื่อให้สถานะเปลี่ยนทันที)
+      const { error: statusError } = await supabase
+        .from('devices')
+        .update({ status: 'รออนุมัติลบ' })
+        .eq('id', device.id);
+      if (statusError) throw statusError;
+
       fetchDevices();
       alert("ส่งคำขออนุมัติลบสำเร็จ");
     } catch (error) {
@@ -44,7 +48,14 @@ export default function DeviceTable({
       alert("เกิดข้อผิดพลาด: " + error.message);
     }
   };
-  // สถานะกำลังโหลด
+
+  // สถานะที่ควรล็อกปุ่มไว้ ไม่ให้กดซ้ำระหว่างรออนุมัติ / กำลังซ่อม
+  const isLocked = (status) =>
+    status === 'รออนุมัติลบ' ||
+    status === 'รออนุมัติแก้ไข' ||
+    status === 'รออนุมัติเคลื่อนย้าย' ||
+    status === 'กำลังซ่อม';
+
   if (loading) {
     return (
       <div className="flex justify-center py-20">
@@ -53,7 +64,6 @@ export default function DeviceTable({
     );
   }
 
-  // สถานะไม่มีข้อมูล
   if (filtered.length === 0) {
     return (
       <div className="text-center py-20 text-muted-foreground">
@@ -63,7 +73,50 @@ export default function DeviceTable({
     );
   }
 
-  // แสดงผลตารางปกติ
+  const renderWarrantyStatus = (expireDateString) => {
+    if (!expireDateString) return <span className="text-muted-foreground/40 font-mono text-xs">—</span>;
+
+    const expireDate = new Date(expireDateString);
+    const today = new Date();
+
+    today.setHours(0, 0, 0, 0);
+    expireDate.setHours(0, 0, 0, 0);
+
+    const diffTime = expireDate.getTime() - today.getTime();
+    const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+
+    const formattedDate = expireDate.toLocaleDateString('th-TH', {
+      day: 'numeric',
+      month: 'short',
+      year: 'numeric'
+    });
+
+    if (diffDays < 0) {
+      return (
+        <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold bg-red-100 text-red-700 border border-red-300 shadow-sm animate-pulse">
+          <AlertTriangle size={12} className="text-red-600" />
+          หมดประกัน ({formattedDate})
+        </span>
+      );
+    }
+
+    if (diffDays <= 30) {
+      return (
+        <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold bg-yellow-100 text-yellow-800 border border-yellow-300 shadow-sm">
+          <CalendarDays size={12} className="text-yellow-600" />
+          ใกล้หมด ({formattedDate})
+        </span>
+      );
+    }
+
+    return (
+      <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium bg-emerald-100 text-emerald-800 border border-emerald-300">
+        <CheckCircle2 size={12} className="text-emerald-600" />
+        {formattedDate}
+      </span>
+    );
+  };
+
   return (
     <div className="bg-card border border-border rounded-xl overflow-hidden shadow-sm">
       <div className="overflow-x-auto">
@@ -83,81 +136,7 @@ export default function DeviceTable({
           <tbody className="divide-y divide-border">
             {filtered.map((d) => {
               const sc = statusColors[d.status] || { bg: 'rgba(107,114,128,0.12)', color: '#6b7280' };
-
-              const renderWarrantyStatus = (expireDateString) => {
-                if (!expireDateString) return <span className="text-muted-foreground/40 font-mono text-xs">—</span>;
-
-                const expireDate = new Date(expireDateString);
-                const today = new Date();
-
-                today.setHours(0, 0, 0, 0);
-                expireDate.setHours(0, 0, 0, 0);
-
-                const diffTime = expireDate.getTime() - today.getTime();
-                const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
-
-                const formattedDate = expireDate.toLocaleDateString('th-TH', {
-                  day: 'numeric',
-                  month: 'short',
-                  year: 'numeric'
-                });
-
-
-                const requestDelete = async (device) => {
-                  // 1. ดึงข้อมูล User ปัจจุบันจาก Auth
-                  const { data: { user } } = await supabase.auth.getUser();
-
-                  if (!user) {
-                    alert("กรุณาเข้าสู่ระบบก่อนทำรายการ");
-                    return;
-                  }
-
-                  // 2. Insert ลงตาราง approvals โดยบันทึกอีเมลลงไปตรงๆ
-                  const { error } = await supabase.from('approvals').insert([{
-                    device_id: device.id,
-                    device_name: device.name,
-                    request_type: 'ขอลบข้อมูล',
-                    status: 'รออนุมัติ',
-                    requested_by: user.email, // นี่คือบรรทัดที่เก็บ admin@dcm.com ลงไปในฐานข้อมูล
-                    payload: {
-                      asset_tag: device.asset_tag,
-                      assigned_to: device.assigned_to
-                    }
-                  }]);
-
-                  if (error) {
-                    console.error("Error inserting:", error);
-                    alert("ไม่สามารถส่งคำขอได้: " + error.message);
-                  } else {
-                    alert("ส่งคำขอสำเร็จ");
-                  }
-                };
-
-                if (diffDays < 0) {
-                  return (
-                    <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold bg-red-100 text-red-700 border border-red-300 shadow-sm animate-pulse">
-                      <AlertTriangle size={12} className="text-red-600" />
-                      หมดประกัน ({formattedDate})
-                    </span>
-                  );
-                }
-
-                if (diffDays <= 30) {
-                  return (
-                    <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold bg-yellow-100 text-yellow-800 border border-yellow-300 shadow-sm">
-                      <CalendarDays size={12} className="text-yellow-600" />
-                      ใกล้หมด ({formattedDate})
-                    </span>
-                  );
-                }
-
-                return (
-                  <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium bg-emerald-100 text-emerald-800 border border-emerald-300">
-                    <CheckCircle2 size={12} className="text-emerald-600" />
-                    {formattedDate}
-                  </span>
-                );
-              };
+              const locked = isLocked(d.status);
 
               return (
                 <tr key={d.id} className="hover:bg-muted/30 transition-colors">
@@ -179,7 +158,7 @@ export default function DeviceTable({
                   </td>
                   <td className="px-2 py-3">
                     <div className="flex items-center gap-1 justify-end">
-                      {/* 1. ปุ่ม Detail (ดูรายละเอียด) */}
+                      {/* 1. ปุ่ม Detail */}
                       <Button
                         variant="ghost"
                         size="icon"
@@ -192,50 +171,45 @@ export default function DeviceTable({
                         <Eye size={14} />
                       </Button>
 
-                      {/* 2. ปุ่ม Edit (แก้ไขข้อมูลเครื่อง) ➕ เพิ่มใหม่ตรงนี้ */}
+                      {/* 2. ปุ่ม เคลื่อนย้าย (เดิมคือปุ่ม Edit) */}
                       <Button
                         variant="ghost"
                         size="icon"
                         className="h-8 w-8 text-foreground/70 hover:text-foreground"
+                        disabled={locked}
                         onClick={(e) => {
-                          e.stopPropagation(); // กัน event ไหลซ้อนตัวแถว
-                          if (setEditItem) setEditItem(d); // ส่ง Object ของอุปกรณ์กลับไปที่ Parent component
+                          e.stopPropagation();
+                          if (setEditItem) setEditItem(d);
                         }}
                       >
-                        <Pencil size={14} />
+                        <ArrowRightLeft size={14} className={locked ? 'opacity-30' : ''} />
                       </Button>
 
-                      {/* 3. ปุ่ม Delete (ส่งลบ/ขออนุมัติลบ) */}
-
-
+                      {/* 3. ปุ่ม Delete */}
                       <Button
                         variant="ghost"
                         size="icon"
                         className="h-8 w-8 text-destructive hover:text-destructive"
-                        disabled={d.status === 'รออนุมัติลบ' || d.status === 'รออนุมัติแก้ไข' || d.status === 'กำลังซ่อม'}
+                        disabled={locked}
                         onClick={(e) => {
                           e.stopPropagation();
-
-                          // 🟢 แก้ไขตรงนี้: ลบ requestDelete(d) ออก แล้วใส่ setDeleteId(d.id) แทน
                           setDeleteId(d.id);
                         }}
                       >
-                        <Trash2 size={14} className={(d.status === 'รออนุมัติลบ') ? 'opacity-30' : ''} />
+                        <Trash2 size={14} className={locked ? 'opacity-30' : ''} />
                       </Button>
                     </div>
                   </td>
                 </tr>
               );
-
             })}
-
           </tbody>
         </table>
       </div>
       <DeleteConfirmDialog
         deleteId={deleteId}
         setDeleteId={setDeleteId}
-        handleDelete={handleDelete} // ส่งฟังก์ชันที่ปรับปรุงแล้วเข้าไป
+        handleDelete={handleDelete}
         deviceName={filtered.find(d => d.id === deleteId)?.name}
       />
     </div>

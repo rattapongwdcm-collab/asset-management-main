@@ -9,7 +9,7 @@ const baseNavItems = [
   { label: 'Dashboard', path: '/', icon: LayoutDashboard },
   { label: 'Device', path: '/device', icon: Monitor },
   { label: 'Repair', path: '/repair', icon: Wrench },
-  { label: 'Rent', path: '/rent', icon: PackageOpen },
+  // { label: 'Rent', path: '/rent', icon: PackageOpen },
 ];
 
 export default function Layout() {
