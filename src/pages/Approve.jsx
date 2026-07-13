@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { supabase } from '@/lib/supabase';
 import { ClipboardCheck, Check, X } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { logDeviceHistory } from '@/lib/deviceHistory';
 
 export default function Approve() {
   const [approvals, setApprovals] = useState([]);
@@ -49,6 +50,13 @@ export default function Approve() {
             .update({ status: 'กำลังซ่อม' })
             .eq('id', item.device_id);
           if (statusError) throw statusError;
+
+          // ✅ log
+          await logDeviceHistory({
+            deviceId: item.device_id,
+            action: 'repair_approved',
+            description: `อนุมัติแจ้งซ่อม: ${item.description || ''}`,
+          });
         }
         else if (requestType === 'edit') {
           const { error: editError } = await supabase
@@ -62,6 +70,13 @@ export default function Approve() {
             .update({ status: 'ใช้งาน' })
             .eq('id', item.device_id);
           if (statusError) throw statusError;
+
+          // ✅ log
+          await logDeviceHistory({
+            deviceId: item.device_id,
+            action: 'edit_approved',
+            description: `อนุมัติแก้ไขข้อมูลอุปกรณ์`,
+          });
         }
         else if (requestType === 'move') {
           const { department, assigned_to } = item.changed_fields || {};
@@ -73,10 +88,24 @@ export default function Approve() {
               assigned_to,
               status: 'ใช้งาน'
             })
-            .eq('id', item.device_id);   // ✅ ใช้ id แทน
+            .eq('id', item.device_id);
           if (moveError) throw moveError;
+
+          // ✅ log
+          await logDeviceHistory({
+            deviceId: item.device_id,
+            action: 'move_approved',
+            description: `อนุมัติเคลื่อนย้ายไปแผนก ${department || ''}`,
+          });
         }
         else if (requestType === 'delete') {
+          // ✅ log ก่อนลบ device จริง (สำคัญ: ต้อง log ก่อน ไม่งั้น FK constraint จะพังตอน insert)
+          await logDeviceHistory({
+            deviceId: item.device_id,
+            action: 'delete_approved',
+            description: `อนุมัติลบอุปกรณ์ออกจากระบบ`,
+          });
+
           const { error: cleanupError } = await supabase
             .from('approvals')
             .delete()
@@ -90,7 +119,6 @@ export default function Approve() {
           if (deleteError) throw deleteError;
 
           await loadData();
-          alert("ดำเนินการสำเร็จ");
           setSubmittingId(null);
           setConfirmAction({ open: false, item: null, type: '' });
           return;
@@ -107,16 +135,26 @@ export default function Approve() {
             .eq('id', item.repair_id);
           if (deleteRepairError) throw deleteRepairError;
         }
-
-        // repair, edit, move ที่ถูกปฏิเสธ -> คืนสถานะเครื่องกลับเป็น "ใช้งาน" เสมอ
         const { error: revertError } = await supabase
           .from('devices')
           .update({ status: 'ใช้งาน' })
           .eq('id', item.device_id);
         if (revertError) throw revertError;
+
+        // ✅ log สำหรับทุกประเภทที่ถูกปฏิเสธ
+        const rejectActionMap = {
+          repair: 'repair_rejected',
+          edit: 'edit_rejected',
+          move: 'move_rejected',
+          delete: 'delete_rejected'
+        };
+        await logDeviceHistory({
+          deviceId: item.device_id,
+          action: rejectActionMap[requestType] || 'rejected',
+          description: `ปฏิเสธคำขอ: ${item.description || ''}`,
+        });
       }
 
-      // ปิดคำขอใน approvals (ยกเว้นกรณี delete approve ที่ return ไปแล้วด้านบน)
       const { error: closeError } = await supabase
         .from('approvals')
         .update({ status: type === 'approve' ? 'Approved' : 'Rejected' })
@@ -124,7 +162,6 @@ export default function Approve() {
       if (closeError) throw closeError;
 
       await loadData();
-      alert("ดำเนินการสำเร็จ");
     } catch (err) {
       alert("เกิดข้อผิดพลาด: " + err.message);
     } finally {

@@ -1,55 +1,80 @@
-import React from 'react';
-import { Monitor, Eye, ArrowRightLeft, Trash2, CalendarDays, AlertTriangle, CheckCircle2 } from 'lucide-react';
+import React, { useState, useEffect } from 'react';
+import { Monitor, Eye, ArrowRightLeft, Trash2, CalendarDays, AlertTriangle, CheckCircle2, ChevronLeft, ChevronRight } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { supabase } from '@/lib/supabase';
 import DeleteConfirmDialog from '@/components/Device/DeleteConfirmDialog';
+import { logDeviceHistory } from '@/lib/deviceHistory';
+
+const ITEMS_PER_PAGE = 10;
 
 export default function DeviceTable({
   loading,
   filtered,
   statusColors,
   setDetailItem,
-  setEditItem, // ➕ เปิด Dialog เคลื่อนย้าย (ไม่ใช่แก้ไขทั่วไปแล้ว)
+  setEditItem,
   setDeleteId,
   deleteId,
   fetchDevices
 }) {
-  const handleDelete = async (deviceId) => {
-    const device = filtered.find(d => d.id === deviceId);
-    if (!device) return;
+  const [currentPage, setCurrentPage] = useState(1);
 
-    const { data: { user } } = await supabase.auth.getUser();
-    if (!user) {
-      alert("กรุณาเข้าสู่ระบบก่อนทำรายการ");
-      return;
+  const totalPages = Math.max(1, Math.ceil(filtered.length / ITEMS_PER_PAGE));
+
+  // ✅ ถ้าข้อมูลถูกกรอง/ค้นหาใหม่แล้วหน้าปัจจุบันเกินจำนวนหน้าที่มี ให้ดีดกลับไปหน้า 1
+  useEffect(() => {
+    if (currentPage > totalPages) {
+      setCurrentPage(1);
     }
+  }, [filtered.length, totalPages, currentPage]);
 
-    try {
-      const { error: approvalError } = await supabase.from('approvals').insert([{
-        device_id: device.id,
-        device_name: device.name,
-        request_type: 'delete',
-        status: 'Pending',
-        user_id: user.id,
-        description: `ขอลบอุปกรณ์ ${device.asset_tag || ''}`
-      }]);
-      if (approvalError) throw approvalError;
+  const paginatedItems = filtered.slice(
+    (currentPage - 1) * ITEMS_PER_PAGE,
+    currentPage * ITEMS_PER_PAGE
+  );
 
-      const { error: statusError } = await supabase
-        .from('devices')
-        .update({ status: 'รออนุมัติลบ' })
-        .eq('id', device.id);
-      if (statusError) throw statusError;
+const handleDelete = async (deviceId) => {
+  const device = filtered.find(d => d.id === deviceId);
+  if (!device) return;
 
-      fetchDevices();
-      alert("ส่งคำขออนุมัติลบสำเร็จ");
-    } catch (error) {
-      console.error("Error:", error);
-      alert("เกิดข้อผิดพลาด: " + error.message);
-    }
-  };
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) {
+    alert("กรุณาเข้าสู่ระบบก่อนทำรายการ");
+    return;
+  }
 
-  // สถานะที่ควรล็อกปุ่มไว้ ไม่ให้กดซ้ำระหว่างรออนุมัติ / กำลังซ่อม
+  try {
+    const { error: approvalError } = await supabase.from('approvals').insert([{
+      device_id: device.id,
+      device_name: device.name,
+      request_type: 'delete',
+      status: 'Pending',
+      user_id: user.id,
+      description: `ขอลบอุปกรณ์ ${device.asset_tag || ''}`
+    }]);
+    if (approvalError) throw approvalError;
+
+    const { error: statusError } = await supabase
+      .from('devices')
+      .update({ status: 'รออนุมัติลบ' })
+      .eq('id', device.id);
+    if (statusError) throw statusError;
+    
+    await logDeviceHistory({
+      deviceId: device.id,
+      assetTag: device.asset_tag,
+      deviceName: device.name,
+      action: 'delete_request',
+      description: `ขออนุมัติลบอุปกรณ์ ${device.asset_tag || ''}`,
+      performedBy: user.email,
+    });
+    fetchDevices();
+    setDeleteId(null);   // ✅ ปิด dialog ยืนยันแทน ไม่ต้อง alert ซ้ำ
+  } catch (error) {
+    console.error("Error:", error);
+    alert("เกิดข้อผิดพลาด: " + error.message);   // เก็บ alert ไว้เฉพาะกรณี error เท่านั้น
+  }
+};
   const isLocked = (status) =>
     status === 'รออนุมัติลบ' ||
     status === 'รออนุมัติแก้ไข' ||
@@ -134,7 +159,7 @@ export default function DeviceTable({
             </tr>
           </thead>
           <tbody className="divide-y divide-border">
-            {filtered.map((d) => {
+            {paginatedItems.map((d) => {
               const sc = statusColors[d.status] || { bg: 'rgba(107,114,128,0.12)', color: '#6b7280' };
               const locked = isLocked(d.status);
 
@@ -158,7 +183,6 @@ export default function DeviceTable({
                   </td>
                   <td className="px-2 py-3">
                     <div className="flex items-center gap-1 justify-end">
-                      {/* 1. ปุ่ม Detail */}
                       <Button
                         variant="ghost"
                         size="icon"
@@ -171,7 +195,6 @@ export default function DeviceTable({
                         <Eye size={14} />
                       </Button>
 
-                      {/* 2. ปุ่ม เคลื่อนย้าย (เดิมคือปุ่ม Edit) */}
                       <Button
                         variant="ghost"
                         size="icon"
@@ -185,7 +208,6 @@ export default function DeviceTable({
                         <ArrowRightLeft size={14} className={locked ? 'opacity-30' : ''} />
                       </Button>
 
-                      {/* 3. ปุ่ม Delete */}
                       <Button
                         variant="ghost"
                         size="icon"
@@ -206,6 +228,42 @@ export default function DeviceTable({
           </tbody>
         </table>
       </div>
+
+      {/* ✅ ส่วนแบ่งหน้า แสดงเฉพาะเมื่อมีมากกว่า 1 หน้า */}
+      {totalPages > 1 && (
+        <div className="flex items-center justify-between px-4 py-3 border-t border-border">
+          <p className="text-xs text-muted-foreground">
+            แสดง {(currentPage - 1) * ITEMS_PER_PAGE + 1}–{Math.min(currentPage * ITEMS_PER_PAGE, filtered.length)} จาก {filtered.length} รายการ
+          </p>
+
+          <div className="flex items-center gap-1">
+            <Button
+              variant="outline"
+              size="sm"
+              className="h-8 px-2.5"
+              disabled={currentPage === 1}
+              onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
+            >
+              <ChevronLeft size={14} />
+            </Button>
+
+            <span className="text-xs text-muted-foreground px-2">
+              หน้า {currentPage} / {totalPages}
+            </span>
+
+            <Button
+              variant="outline"
+              size="sm"
+              className="h-8 px-2.5"
+              disabled={currentPage === totalPages}
+              onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))}
+            >
+              <ChevronRight size={10} />
+            </Button>
+          </div>
+        </div>
+      )}
+
       <DeleteConfirmDialog
         deleteId={deleteId}
         setDeleteId={setDeleteId}

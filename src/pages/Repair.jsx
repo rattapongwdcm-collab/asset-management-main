@@ -1,14 +1,13 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { supabase } from '@/lib/supabase';
-import { Plus, Search, Wrench, AlertCircle, CheckCircle2, XCircle } from 'lucide-react';
+import { Plus, Search, Wrench, AlertCircle, CheckCircle2, XCircle, ChevronDown } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
+import { logDeviceHistory } from '@/lib/deviceHistory';
 
-// 🎨 เปลี่ยนสเตตัสสีด้านบนสุดของไฟล์ Repair.jsx
 const statusColors = {
   'รออนุมัติแจ้งซ่อม': { bg: 'rgba(245,158,11,0.12)', color: '#f59e0b', text: 'รออนุมัติแจ้งซ่อม' },
   'กำลังซ่อม': { bg: 'rgba(59,130,246,0.12)', color: '#3b82f6', text: 'กำลังซ่อม' },
@@ -24,10 +23,15 @@ export default function Repair() {
   const [search, setSearch] = useState('');
   const [isModalOpen, setIsModalOpen] = useState(false);
 
+  // ✅ state สำหรับ dropdown ค้นหาอุปกรณ์
+  const [deviceSearch, setDeviceSearch] = useState('');
+  const [deviceDropdownOpen, setDeviceDropdownOpen] = useState(false);
+  const deviceDropdownRef = useRef(null);
+
   const [form, setForm] = useState({
     device_id: '',
     device_name: '',
-    asset_tag: '', // เพิ่มตรงนี้ด้วยครับ
+    asset_tag: '',
     reported_by: '',
     issue_description: '',
   });
@@ -54,7 +58,6 @@ export default function Repair() {
     loadData();
   }, []);
 
-  // 2. ล้างฟอร์มทุกครั้งที่เปิด Modal
   useEffect(() => {
     if (isModalOpen) {
       setForm({
@@ -63,9 +66,24 @@ export default function Repair() {
         reported_by: '',
         issue_description: '',
       });
+      setDeviceSearch('');
+      setDeviceDropdownOpen(false);
       setError('');
     }
+    setDeviceDropdownOpen(false);
   }, [isModalOpen]);
+
+  // ✅ ปิด dropdown เมื่อคลิกข้างนอก
+  useEffect(() => {
+    const handleClickOutside = (e) => {
+      if (deviceDropdownRef.current && !deviceDropdownRef.current.contains(e.target)) {
+        setDeviceDropdownOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
+
   const handleDeviceChange = (deviceId) => {
     const selectedDevice = devices.find(d => d.id === deviceId);
     if (selectedDevice) {
@@ -73,22 +91,32 @@ export default function Repair() {
         ...prev,
         device_id: deviceId,
         device_name: selectedDevice.name,
-        asset_tag: selectedDevice.asset_tag // เพิ่มบรรทัดนี้ เพื่อเก็บรหัสทรัพย์สินไว้ใน form
+        asset_tag: selectedDevice.asset_tag
       }));
+      setDeviceSearch(`[${selectedDevice.asset_tag || 'ไม่มีรหัส'}] ${selectedDevice.name}`);
+      setDeviceDropdownOpen(false);
     }
   };
 
+  // ✅ กรองรายการอุปกรณ์ตามคำค้นหา (เฉพาะเครื่องสถานะ "ใช้งาน" เหมือนเดิม)
+  const availableDevices = devices.filter(dev => dev.status === 'ใช้งาน');
+  const filteredDeviceOptions = availableDevices.filter(dev => {
+    const q = deviceSearch.toLowerCase().trim();
+    if (!q) return true;
+    return (
+      (dev.name || '').toLowerCase().includes(q) ||
+      (dev.asset_tag || '').toLowerCase().includes(q)
+    );
+  });
+
   const handleSubmitData = async () => {
-    // 1. ตรวจสอบข้อมูลเบื้องต้น
     if (!form.device_id || !form.issue_description.trim() || !form.reported_by.trim()) {
       setError('กรุณากรอกข้อมูลให้ครบถ้วน');
       return;
     }
 
-    // 2. ดึงข้อมูล User ปัจจุบัน (แก้ไขจุดที่ทำให้เกิด Error)
     const { data: { user } } = await supabase.auth.getUser();
 
-    // 3. ดึงข้อมูลอุปกรณ์จาก State 'devices'
     const selectedDevice = devices.find(d => d.id === form.device_id);
     if (!selectedDevice) {
       setError('ไม่พบข้อมูลอุปกรณ์ในระบบ');
@@ -98,115 +126,106 @@ export default function Repair() {
     setSaving(true);
     setError('');
 
- try {
-  // 4. บันทึกประวัติการแจ้งซ่อม (repairs) — ดึง id ที่ insert ได้กลับมาด้วย
-  const { data: repairData, error: insertRepairError } = await supabase
-    .from('repairs')
-    .insert([{
-      device_id: form.device_id,
-      device_name: selectedDevice.name,
-      reported_by: form.reported_by.trim(),
-      issue_description: form.issue_description.trim(),
-      status: 'รออนุมัติแจ้งซ่อม'
-    }])
-    .select()
-    .single();
-  if (insertRepairError) throw insertRepairError;
+    try {
+      const { data: repairData, error: insertRepairError } = await supabase
+        .from('repairs')
+        .insert([{
+          device_id: form.device_id,
+          device_name: selectedDevice.name,
+          reported_by: form.reported_by.trim(),
+          issue_description: form.issue_description.trim(),
+          status: 'รออนุมัติแจ้งซ่อม'
+        }])
+        .select()
+        .single();
+      if (insertRepairError) throw insertRepairError;
 
-  // 5. บันทึกข้อมูลเข้าตาราง approvals — ผูก repair_id ไว้ด้วย + แก้ request_type เป็นตัวเล็กให้ตรงกับ Approve.jsx
-  const { error: insertApprovalError } = await supabase
-    .from('approvals')
-    .insert([{
-      device_id: form.device_id,
-      device_name: form.device_name,
-      description: form.issue_description.trim(),
-      request_type: 'repair',      // ✅ แก้เป็นตัวเล็กให้ตรงกับเงื่อนไขใน Approve.jsx
-      repair_id: repairData.id,    // ✅ เก็บ id ของแถว repairs ไว้อ้างอิง
-      requested_by: form.reported_by.trim(),
-      status: 'Pending',
-      user_id: user?.id || null
-    }]);
+      const { error: insertApprovalError } = await supabase
+        .from('approvals')
+        .insert([{
+          device_id: form.device_id,
+          device_name: form.device_name,
+          description: form.issue_description.trim(),
+          request_type: 'repair',
+          repair_id: repairData.id,
+          requested_by: form.reported_by.trim(),
+          status: 'Pending',
+          user_id: user?.id || null
+        }]);
 
-  if (insertApprovalError) throw insertApprovalError;
+      if (insertApprovalError) throw insertApprovalError;
 
-  // 6. อัปเดตสถานะเครื่องในตาราง devices
-  const { error: statusError } = await supabase
-    .from('devices')
-    .update({ status: 'กำลังแจ้งซ่อม' })
-    .eq('id', form.device_id);
-  if (statusError) throw statusError;
+      const { error: statusError } = await supabase
+        .from('devices')
+        .update({ status: 'กำลังแจ้งซ่อม' })
+        .eq('id', form.device_id);
+      if (statusError) throw statusError;
+      await logDeviceHistory({
+        deviceId: form.device_id,
+        assetTag: selectedDevice.asset_tag,
+        deviceName: selectedDevice.name,
+        action: 'repair_request',
+        description: form.issue_description.trim(),
+        performedBy: form.reported_by.trim(),
+      });
+      setIsModalOpen(false);
+      loadData();
 
-  setIsModalOpen(false);
-  loadData();
-
-} catch (err) {
-  console.error("รายละเอียด Error:", err);
-  setError('บันทึกข้อมูลไม่สำเร็จ: ' + err.message);
-} finally {
+    } catch (err) {
+      console.error("รายละเอียด Error:", err);
+      setError('บันทึกข้อมูลไม่สำเร็จ: ' + err.message);
+    } finally {
       setSaving(false);
     }
   };
 
-  // 2. จัดการงานซ่อมเสร็จสิ้น -> อัปเดตตารางอุปกรณ์ (สำรอง/เสีย) + ลบแถวประวัติแจ้งซ่อมออกจากตารางทันที
   const handleCloseRepairJob = async (repairId, deviceId, finalStatus) => {
     try {
       if (finalStatus === 'Completed') {
         if (deviceId) {
-          await supabase
-            .from('devices')
-            .update({ status: 'สำรอง' })
-            .eq('id', deviceId);
+          await supabase.from('devices').update({ status: 'สำรอง' }).eq('id', deviceId);
         }
-
       } else if (finalStatus === 'Cancelled') {
         if (deviceId) {
-          await supabase
-            .from('devices')
-            .update({ status: 'เสีย' })
-            .eq('id', deviceId);
+          await supabase.from('devices').update({ status: 'เสีย' }).eq('id', deviceId);
         }
       }
 
-      await supabase
-        .from('repairs')
-        .delete()
-        .eq('id', repairId);
-
+      await supabase.from('repairs').delete().eq('id', repairId);
+      await logDeviceHistory({
+        deviceId: deviceId,
+        action: finalStatus === 'Completed' ? 'repair_completed' : 'repair_cancelled',
+        description: finalStatus === 'Completed' ? 'ซ่อมเสร็จ กลับมาใช้งานได้' : 'ซ่อมไม่ได้ อุปกรณ์เสีย',
+      });
       loadData();
     } catch (err) {
       console.error("เกิดข้อผิดพลาดในการจัดการงานซ่อม:", err);
     }
   };
 
-  // 🔍 ระบบค้นหาหน้าตารางแบบครอบคลุมและยืดหยุ่น (กรองฝั่ง Client)
   const filtered = repairs.filter(r => {
-  const searchStr = search.toLowerCase().trim();
+    const searchStr = search.toLowerCase().trim();
+    const currentStatus = (r.status || '').trim();
+    const isRelevantStatus = currentStatus === 'รออนุมัติแจ้งซ่อม' || currentStatus === 'กำลังซ่อม';
 
-  // 1. เช็กสถานะ (ลองทำล้างช่องว่างเผื่อไว้เพื่อความปลอดภัย)
-  const currentStatus = (r.status || '').trim();
-  const isRelevantStatus = currentStatus === 'รออนุมัติแจ้งซ่อม' || currentStatus === 'กำลังซ่อม';
-  
-  if (!isRelevantStatus) return false;
-  if (!searchStr) return true;
+    if (!isRelevantStatus) return false;
+    if (!searchStr) return true;
 
-  // 2. จับคู่อุปกรณ์
-  const matchedDevice = devices.find(d => d.id === r.device_id);
-  
-  // ใช้ข้อมูลจากตัวใบซ่อมเอง (r.device_name) สำรองไว้ด้วย เผื่อจับคู่ใน devices ไม่เจอ
-  const deviceName = (r.device_name || matchedDevice?.name || '').toLowerCase();
-  const assetTag = (matchedDevice?.asset_tag || '').toLowerCase();
-  const reportedBy = (r.reported_by || '').toLowerCase();
-  const issueDesc = (r.issue_description || '').toLowerCase();
-  const statusText = currentStatus.toLowerCase();
+    const matchedDevice = devices.find(d => d.id === r.device_id);
+    const deviceName = (r.device_name || matchedDevice?.name || '').toLowerCase();
+    const assetTag = (matchedDevice?.asset_tag || '').toLowerCase();
+    const reportedBy = (r.reported_by || '').toLowerCase();
+    const issueDesc = (r.issue_description || '').toLowerCase();
+    const statusText = currentStatus.toLowerCase();
 
-  return (
-    deviceName.includes(searchStr) ||
-    assetTag.includes(searchStr) ||
-    reportedBy.includes(searchStr) ||
-    issueDesc.includes(searchStr) ||
-    statusText.includes(searchStr)
-  );
-});
+    return (
+      deviceName.includes(searchStr) ||
+      assetTag.includes(searchStr) ||
+      reportedBy.includes(searchStr) ||
+      issueDesc.includes(searchStr) ||
+      statusText.includes(searchStr)
+    );
+  });
 
   return (
     <div className="space-y-5">
@@ -270,10 +289,8 @@ export default function Repair() {
                     </td>
                     <td className="px-4 py-3 text-right">
                       <div className="flex justify-end gap-1.5">
-
                         {r.status === 'กำลังซ่อม' && (
                           <>
-                            {/* ปุ่ม ซ่อมได้ */}
                             <Button
                               variant="ghost"
                               size="sm"
@@ -284,7 +301,6 @@ export default function Repair() {
                               <span className="text-xs">ซ่อมได้</span>
                             </Button>
 
-                            {/* ปุ่ม เสีย */}
                             <Button
                               variant="ghost"
                               size="sm"
@@ -300,7 +316,6 @@ export default function Repair() {
                         {r.status === 'รออนุมัติแจ้งซ่อม' && (
                           <span className="text-xs text-amber-600 bg-amber-50 px-2.5 py-1 rounded-md font-medium">⏳ รออนุมัติจากหัวหน้า</span>
                         )}
-
                       </div>
                     </td>
                   </tr>
@@ -329,23 +344,52 @@ export default function Repair() {
               </div>
             )}
 
-            <div className="space-y-1.5">
-              <Label className="text-xs font-bold text-foreground/80">เลือกอุปกรณ์ที่ต้องการซ่อม <span className="text-red-500">*</span></Label>
-              <Select value={form.device_id} onValueChange={handleDeviceChange}>
-                <SelectTrigger className="h-9 text-xs">
-                  <SelectValue placeholder="เลือกตามรหัสทรัพย์สิน หรือ ชื่อเครื่อง" />
-                </SelectTrigger>
-                <SelectContent>
-                  {/* 💡 ใส่ฟิลเตอร์เพื่อซ่อนเครื่องที่ "กำลังแจ้งซ่อม" และ "กำลังซ่อม" ทันที */}
-                  {devices
-                    .filter(dev => dev.status === 'ใช้งาน') // กรองให้แสดงเฉพาะสถานะ 'ใช้งาน' เท่านั้น
-                    .map((dev) => (
-                      <SelectItem key={dev.id} value={dev.id} className="text-xs">
-                        [{dev.asset_tag || 'ไม่มีรหัส'}] {dev.name} {dev.status ? `(${dev.status})` : ''}
-                      </SelectItem>
-                    ))}
-                </SelectContent>
-              </Select>
+            {/* ✅ Dropdown ค้นหาอุปกรณ์ (แทนที่ Select เดิม) */}
+            <div className="space-y-1.5 relative" ref={deviceDropdownRef}>
+              <Label className="text-xs font-bold text-foreground/80">
+                เลือกอุปกรณ์ที่ต้องการซ่อม <span className="text-red-500">*</span>
+              </Label>
+
+              <div className="relative">
+                <Input
+                  value={deviceSearch}
+                  onChange={(e) => {
+                    setDeviceSearch(e.target.value);
+                    setDeviceDropdownOpen(true);   // ✅ เปิดตอนพิมพ์
+                    if (form.device_id) {
+                      setForm(prev => ({ ...prev, device_id: '', device_name: '', asset_tag: '' }));
+                    }
+                  }}
+                  onClick={() => setDeviceDropdownOpen(true)}   // ✅ เปิดตอนกดคลิกช่องนี้ตรงๆ
+                  placeholder="พิมพ์ค้นหารหัสทรัพย์สิน หรือ ชื่อเครื่อง..."
+                  className="h-9 text-xs pr-8"
+                />
+                <ChevronDown
+                  size={14}
+                  className="absolute right-2.5 top-1/2 -translate-y-1/2 text-muted-foreground pointer-events-none"
+                />
+              </div>
+
+              {deviceDropdownOpen && (
+                <div className="absolute z-50 mt-1 w-full bg-white border rounded-md shadow-lg max-h-56 overflow-y-auto">
+                  {filteredDeviceOptions.length === 0 ? (
+                    <div className="px-3 py-2 text-xs text-muted-foreground text-center">
+                      ไม่พบอุปกรณ์ที่ตรงกับคำค้นหา
+                    </div>
+                  ) : (
+                    filteredDeviceOptions.map((dev) => (
+                      <div
+                        key={dev.id}
+                        onClick={() => handleDeviceChange(dev.id)}
+                        className={`px-3 py-2 text-xs cursor-pointer hover:bg-muted/60 transition-colors ${form.device_id === dev.id ? 'bg-primary/10 font-semibold' : ''
+                          }`}
+                      >
+                        [{dev.asset_tag || 'ไม่มีรหัส'}] {dev.name}
+                      </div>
+                    ))
+                  )}
+                </div>
+              )}
             </div>
 
             <div className="space-y-1.5">
@@ -370,10 +414,10 @@ export default function Repair() {
           </div>
 
           <DialogFooter className="pt-2 gap-2 sm:gap-0">
-            <Button type="button" variant="outline" onClick={() => setIsModalOpen(false)} className="text-xs">
+            <Button type="button" variant="outline" onClick={() => setIsModalOpen(false)} className="text-xs hover:bg-[#111827] hover:text-white ">
               ยกเลิก
             </Button>
-            <Button type="button" onClick={handleSubmitData} disabled={saving} className="text-xs">
+            <Button type="button" onClick={handleSubmitData} disabled={saving} variant="outline" className="text-xs hover:bg-[#111827] hover:text-white" >
               {saving ? 'กำลังส่งคำขอ...' : 'ขออนุมัติแจ้งซ่อม'}
             </Button>
           </DialogFooter>

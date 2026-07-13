@@ -23,7 +23,7 @@ export default function CloseConfirmDialog({
 
         <div className="flex justify-end gap-3 mt-4">
           <Button
-          className="hover:bg-[#111827] hover:text-white"
+            className="hover:bg-[#111827] hover:text-white"
             variant="outline"
             onClick={() => setIsOpen(false)}
           >
@@ -31,7 +31,7 @@ export default function CloseConfirmDialog({
           </Button>
 
           <Button
-          className="hover:bg-[#111827] hover:text-white"
+            className="hover:bg-[#111827] hover:text-white"
             variant="destructive"
             onClick={() => {
               setIsOpen(false);

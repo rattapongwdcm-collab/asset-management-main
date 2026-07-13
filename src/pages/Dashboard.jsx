@@ -1,20 +1,19 @@
 import { useState, useEffect } from 'react';
 import { supabase } from '@/lib/supabase';
-import { Monitor, Wrench, PackageOpen, AlertTriangle, CheckCircle, Clock, TrendingUp, Activity } from 'lucide-react';
+import { Monitor, Wrench, PackageOpen, AlertTriangle, CheckCircle, Clock, TrendingUp, Activity, Laptop, Printer, Wifi, Server, Smartphone, Tablet, Package } from 'lucide-react';
 import { Link } from 'react-router-dom';
 
 export default function Dashboard() {
-  const [stats, setStats] = useState({ devices: [], repairs: [], rents: [] });
+  const [stats, setStats] = useState({ devices: [], repairs: [] });
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     const load = async () => {
-      const [{ data: devices }, { data: repairs }, { data: rents }] = await Promise.all([
+      const [{ data: devices }, { data: repairs }] = await Promise.all([
         supabase.from('devices').select('*'),
         supabase.from('repairs').select('*'),
-        supabase.from('rents').select('*'),
       ]);
-      setStats({ devices: devices || [], repairs: repairs || [], rents: rents || [] });
+      setStats({ devices: devices || [], repairs: repairs || [] });
       setLoading(false);
     };
     load();
@@ -34,13 +33,32 @@ export default function Dashboard() {
     completed: stats.repairs.filter(r => r.status === 'Completed').length,
   };
 
-  const rentStats = {
-    total: stats.rents.length,
-    active: stats.rents.filter(r => r.status === 'Active').length,
-    overdue: stats.rents.filter(r => r.status === 'Overdue').length,
-    returned: stats.rents.filter(r => r.status === 'Returned').length,
-  };
+  // 📊 แยกจำนวนอุปกรณ์ตามประเภท (category) จากข้อมูลจริงในทะเบียน
+  const categoryConfig = [
+    { key: 'Laptop', label: 'Laptop', icon: Laptop, color: '#3b82f6' },
+    { key: 'Desktop', label: 'Desktop', icon: Monitor, color: '#6366f1' },
+    { key: 'Monitor', label: 'Monitor', icon: Monitor, color: '#8b5cf6' },
+    { key: 'Printer', label: 'Printer', icon: Printer, color: '#ec4899' },
+    { key: 'Network', label: 'Network', icon: Wifi, color: '#06b6d4' },
+    { key: 'Server', label: 'Server', icon: Server, color: '#f59e0b' },
+    { key: 'Mobile', label: 'Mobile', icon: Smartphone, color: '#10b981' },
+    { key: 'Tablet', label: 'Tablet', icon: Tablet, color: '#14b8a6' },
+    { key: 'Other', label: 'Other', icon: Package, color: '#6b7280' },
+  ];
 
+  const knownKeys = categoryConfig.map(c => c.key);
+  const categoryCounts = stats.devices.reduce((acc, d) => {
+    const cat = knownKeys.includes(d.category) ? d.category : 'Other';
+    acc[cat] = (acc[cat] || 0) + 1;
+    return acc;
+  }, {});
+
+  const categoryStats = categoryConfig.map(c => ({
+    ...c,
+    count: categoryCounts[c.key] || 0,
+  }));
+
+  // ✅ เหลือแค่ 2 การ์ด: อุปกรณ์ทั้งหมด กับ งานซ่อม (ตัดการ์ด "การยืม" และ "เกินกำหนด" ออก)
   const summaryCards = [
     {
       label: 'อุปกรณ์ทั้งหมด',
@@ -60,24 +78,6 @@ export default function Dashboard() {
       bg: 'rgba(245,158,11,0.1)',
       link: '/repair',
     },
-    {
-      label: 'การยืม',
-      value: rentStats.total,
-      sub: `${rentStats.active} กำลังยืม`,
-      icon: PackageOpen,
-      color: '#10b981',
-      bg: 'rgba(16,185,129,0.1)',
-      link: '/rent',
-    },
-    {
-      label: 'เกินกำหนด',
-      value: rentStats.overdue,
-      sub: 'รอการคืน',
-      icon: AlertTriangle,
-      color: '#ef4444',
-      bg: 'rgba(239,68,68,0.1)',
-      link: '/rent',
-    },
   ];
 
   if (loading) {
@@ -95,7 +95,7 @@ export default function Dashboard() {
         <p className="text-muted-foreground text-sm mt-1">ภาพรวมระบบจัดการ IT Assets</p>
       </div>
 
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-5">
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-5">
         {summaryCards.map(card => (
           <Link to={card.link} key={card.label}>
             <div className="rounded-xl p-5 bg-card border border-border hover:shadow-lg transition-all duration-200 cursor-pointer group">
@@ -117,89 +117,30 @@ export default function Dashboard() {
         ))}
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-5">
-        <div className="bg-card border border-border rounded-xl p-5">
-          <div className="flex items-center gap-2 mb-4">
-            <Monitor size={16} className="text-blue-500" />
-            <h3 className="font-semibold text-sm text-foreground">สถานะอุปกรณ์</h3>
-          </div>
-          <div className="space-y-3">
-            {[
-              { label: 'พร้อมใช้', value: deviceStats.available, total: deviceStats.total, color: '#10b981' },
-              { label: 'กำลังใช้งาน', value: deviceStats.inUse, total: deviceStats.total, color: '#3b82f6' },
-              { label: 'กำลังซ่อม', value: deviceStats.underRepair, total: deviceStats.total, color: '#f59e0b' },
-            ].map(item => (
-              <div key={item.label}>
-                <div className="flex justify-between text-xs mb-1">
-                  <span className="text-muted-foreground">{item.label}</span>
-                  <span className="font-medium text-foreground">{item.value}</span>
-                </div>
-                <div className="h-1.5 bg-muted rounded-full overflow-hidden">
-                  <div
-                    className="h-full rounded-full transition-all duration-500"
-                    style={{
-                      width: deviceStats.total ? `${(item.value / deviceStats.total) * 100}%` : '0%',
-                      background: item.color,
-                    }}
-                  />
-                </div>
-              </div>
-            ))}
-          </div>
+      {/* 📊 จำนวนอุปกรณ์แยกตามประเภท */}
+      <div className="bg-card border border-border rounded-xl p-5">
+        <div className="flex items-center gap-2 mb-4">
+          <PackageOpen size={16} className="text-primary" />
+          <h3 className="font-semibold text-sm text-foreground">จำนวนอุปกรณ์แยกตามประเภท</h3>
         </div>
-
-        <div className="bg-card border border-border rounded-xl p-5">
-          <div className="flex items-center gap-2 mb-4">
-            <Wrench size={16} className="text-amber-500" />
-            <h3 className="font-semibold text-sm text-foreground">สถานะงานซ่อม</h3>
-          </div>
-          <div className="space-y-3">
-            {[
-              { label: 'รอดำเนินการ', value: repairStats.pending, color: '#f59e0b', icon: Clock },
-              { label: 'กำลังซ่อม', value: repairStats.inProgress, color: '#3b82f6', icon: Activity },
-              { label: 'ซ่อมเสร็จ', value: repairStats.completed, color: '#10b981', icon: CheckCircle },
-            ].map(item => (
-              <div key={item.label} className="flex items-center justify-between">
-                <div className="flex items-center gap-2">
-                  <item.icon size={14} style={{ color: item.color }} />
-                  <span className="text-xs text-muted-foreground">{item.label}</span>
-                </div>
-                <span
-                  className="text-xs font-semibold px-2.5 py-1 rounded-full"
-                  style={{ background: `${item.color}20`, color: item.color }}
-                >
-                  {item.value}
-                </span>
+        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
+          {categoryStats.map(cat => (
+            <div
+              key={cat.key}
+              className="rounded-lg border border-border p-3 flex items-center gap-3 hover:shadow-sm transition-shadow"
+            >
+              <div
+                className="w-9 h-9 rounded-lg flex items-center justify-center shrink-0"
+                style={{ background: `${cat.color}20` }}
+              >
+                <cat.icon size={16} style={{ color: cat.color }} />
               </div>
-            ))}
-          </div>
-        </div>
-
-        <div className="bg-card border border-border rounded-xl p-5">
-          <div className="flex items-center gap-2 mb-4">
-            <PackageOpen size={16} className="text-emerald-500" />
-            <h3 className="font-semibold text-sm text-foreground">สถานะการยืม</h3>
-          </div>
-          <div className="space-y-3">
-            {[
-              { label: 'กำลังยืม', value: rentStats.active, color: '#10b981', icon: Activity },
-              { label: 'เกินกำหนด', value: rentStats.overdue, color: '#ef4444', icon: AlertTriangle },
-              { label: 'คืนแล้ว', value: rentStats.returned, color: '#6b7280', icon: CheckCircle },
-            ].map(item => (
-              <div key={item.label} className="flex items-center justify-between">
-                <div className="flex items-center gap-2">
-                  <item.icon size={14} style={{ color: item.color }} />
-                  <span className="text-xs text-muted-foreground">{item.label}</span>
-                </div>
-                <span
-                  className="text-xs font-semibold px-2.5 py-1 rounded-full"
-                  style={{ background: `${item.color}20`, color: item.color }}
-                >
-                  {item.value}
-                </span>
+              <div className="min-w-0">
+                <p className="text-xs text-muted-foreground truncate">{cat.label}</p>
+                <p className="text-lg font-bold text-foreground leading-tight">{cat.count}</p>
               </div>
-            ))}
-          </div>
+            </div>
+          ))}
         </div>
       </div>
 
@@ -236,4 +177,4 @@ export default function Dashboard() {
       )}
     </div>
   );
-}
+} 

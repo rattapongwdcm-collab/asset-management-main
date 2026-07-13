@@ -1,10 +1,10 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { Label } from '@/components/ui/label';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { supabase } from '@/lib/supabase';
-import { ArrowRightLeft, AlertCircle } from 'lucide-react';
+import { ArrowRightLeft, AlertCircle, ChevronDown } from 'lucide-react';
+import { logDeviceHistory } from '@/lib/deviceHistory';
 
 export default function DeviceEditFormDialog({
   isOpen,
@@ -20,10 +20,15 @@ export default function DeviceEditFormDialog({
   departments,
   fetchDevices
 }) {
+  // ✅ state สำหรับ dropdown ค้นหา "แผนกปลายทาง"
+  const [departmentSearch, setDepartmentSearch] = useState('');
+  const [departmentDropdownOpen, setDepartmentDropdownOpen] = useState(false);
+  const departmentRef = useRef(null);
+
   useEffect(() => {
     if (isOpen && deviceData) {
       setForm({
-        device_id: deviceData.id,   // ✅ แก้จาก deviceData.device_id เป็น deviceData.id
+        device_id: deviceData.id,
         asset_tag: deviceData.asset_tag || "",
         name: deviceData.name || "",
         assigned_to: deviceData.assigned_to || "",
@@ -36,8 +41,34 @@ export default function DeviceEditFormDialog({
         company_contact: deviceData.company_contact || "",
         image_url: deviceData.image_url || null
       });
+      setDepartmentSearch(deviceData.department || "");   // ✅ sync ข้อความค้นหา
+      setDepartmentDropdownOpen(false);
+    } else {
+      setDepartmentDropdownOpen(false);
     }
   }, [isOpen, deviceData, setForm]);
+
+  // ✅ ปิด dropdown เมื่อคลิกข้างนอก
+  useEffect(() => {
+    const handleClickOutside = (e) => {
+      if (departmentRef.current && !departmentRef.current.contains(e.target)) {
+        setDepartmentDropdownOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
+
+  const filteredDepartments = departments.filter(dep =>
+    dep.toLowerCase().includes(departmentSearch.toLowerCase().trim())
+  );
+
+  const handleSelectDepartment = (dep) => {
+    setForm(f => ({ ...f, department: dep }));
+    setErrors(prev => ({ ...prev, department: '' }));
+    setDepartmentSearch(dep);
+    setDepartmentDropdownOpen(false);
+  };
 
   const handleRequestMove = async () => {
     setSaving(true);
@@ -49,7 +80,12 @@ export default function DeviceEditFormDialog({
         return;
       }
 
-      // 1. บันทึกข้อมูลคำขอไปยังตาราง approvals
+      // ✅ กันไว้ตั้งแต่ต้น: เช็คว่า device_id มีค่าจริงก่อน insert
+      // (ป้องกัน error "invalid input syntax for type uuid" ที่เจอตอนนี้)
+      if (!form.device_id) {
+        throw new Error('ไม่พบรหัสอุปกรณ์ที่ต้องการเคลื่อนย้าย กรุณาปิดหน้าต่างนี้แล้วเปิดใหม่อีกครั้ง');
+      }
+
       const { error: approvalError } = await supabase.from('approvals').insert([{
         device_id: form.device_id,
         request_type: 'move',
@@ -63,21 +99,26 @@ export default function DeviceEditFormDialog({
       }]);
       if (approvalError) throw approvalError;
 
-      // 2. อัปเดตสถานะของอุปกรณ์ในตาราง devices เป็น 'รออนุมัติเคลื่อนย้าย'
       const { data: updateData, error: statusError } = await supabase
         .from('devices')
         .update({ status: 'รออนุมัติเคลื่อนย้าย' })
-        .eq('id', form.device_id) // 💡 แก้ไขตรงนี้จาก form.status เป็น form.device_id
+        .eq('id', form.device_id)
         .select();
-
       if (statusError) throw statusError;
 
-      // ตรวจสอบว่ามีข้อมูลถูกอัปเดตจริงไหม
       if (!updateData || updateData.length === 0) {
         throw new Error('ไม่พบอุปกรณ์ที่ต้องการอัปเดต (device_id ไม่ถูกต้อง)');
       }
 
-      alert("ส่งคำขอเคลื่อนย้ายสำเร็จ รอ Admin อนุมัติครับ");
+      await logDeviceHistory({
+        deviceId: form.device_id,
+        assetTag: deviceData?.asset_tag,
+        deviceName: deviceData?.name,
+        action: 'move_request',
+        description: `ขอย้ายไปแผนก ${form.department}, ผู้รับมอบหมายใหม่: ${form.assigned_to}`,
+        performedBy: user.email,
+      });
+
       setIsOpen(false);
       if (fetchDevices) fetchDevices();
     } catch (err) {
@@ -87,13 +128,11 @@ export default function DeviceEditFormDialog({
     }
   };
 
-  // 🛠️ ตรวจสอบข้อมูลก่อนส่งขออนุมัติ
   const validateAndSave = () => {
     const localErrors = {};
     const departmentTrimmed = (form.department || "").trim();
     const assignedToTrimmed = (form.assigned_to || "").trim();
 
-    // 1. เช็คค่าว่าง / ช่องว่างล้วน
     if (!departmentTrimmed) {
       localErrors.department = "กรุณาเลือกแผนกปลายทาง";
     }
@@ -108,7 +147,6 @@ export default function DeviceEditFormDialog({
       return;
     }
 
-    // 2. เช็คข้อมูลซ้ำกับของเดิม (ไม่มีอะไรเปลี่ยนแปลง)
     const sameDepartment = departmentTrimmed === (deviceData?.department || "").trim();
     const sameAssignedTo = assignedToTrimmed === (deviceData?.assigned_to || "").trim();
 
@@ -117,12 +155,10 @@ export default function DeviceEditFormDialog({
       return;
     }
 
-    // เขียนค่าที่ trim แล้วกลับเข้า form ก่อนส่ง (กันช่องว่างหน้า-หลังหลุดเข้า DB)
     setForm(f => ({ ...f, department: departmentTrimmed, assigned_to: assignedToTrimmed }));
     handleRequestMove();
   };
 
-  // ✅ กันการอ่านค่าจาก deviceData ตอนเป็น undefined
   const handleCancel = () => {
     setErrors({});
 
@@ -177,24 +213,47 @@ export default function DeviceEditFormDialog({
               {deviceData?.asset_tag && <span className="ml-1 font-mono">({deviceData.asset_tag})</span>}
             </div>
 
-            <div className="w-full">
+            {/* ✅ แผนกปลายทาง — เปลี่ยนเป็น combobox ค้นหาได้ */}
+            <div className="w-full relative" ref={departmentRef}>
               <Label className={`text-[11px] font-bold ${errors.department ? "text-red-500" : "text-foreground/80"}`}>
                 แผนกปลายทาง
               </Label>
-              <div className="mt-1">
-                <Select
+              <div className="relative mt-1">
+                <input
+                  value={departmentSearch}
+                  onChange={(e) => {
+                    setDepartmentSearch(e.target.value);
+                    setDepartmentDropdownOpen(true);
+                    if (form.department) {
+                      setForm(f => ({ ...f, department: '' }));
+                    }
+                  }}
+                  onClick={() => setDepartmentDropdownOpen(true)}
+                  placeholder={errors.department ? errors.department : "ค้นหาแผนกที่จะย้ายไป"}
                   disabled={saving}
-                  value={form.department || ""}
-                  onValueChange={(v) => { setForm(f => ({ ...f, department: v })); setErrors(prev => ({ ...prev, department: "" })); }}
-                >
-                  <SelectTrigger className={`h-9 text-xs rounded-md transition-colors ${errors.department ? "border-red-500 bg-red-50/20 text-red-500 focus:ring-red-500" : ""}`}>
-                    <SelectValue placeholder={errors.department ? errors.department : "เลือกแผนกที่จะย้ายไป"} />
-                  </SelectTrigger>
-                  <SelectContent className="rounded-lg">
-                    {departments.map(dep => <SelectItem key={dep} value={dep} className="text-xs">{dep}</SelectItem>)}
-                  </SelectContent>
-                </Select>
+                  className={`h-9 w-full rounded-md border px-3 pr-7 text-xs transition-colors focus:outline-none focus:ring-1 ${errors.department ? "border-red-500 bg-red-50/20 placeholder:text-red-400 focus:ring-red-500" : "border-input focus:ring-primary"}`}
+                />
+                <ChevronDown size={13} className="absolute right-2.5 top-1/2 -translate-y-1/2 text-muted-foreground pointer-events-none" />
               </div>
+
+              {departmentDropdownOpen && (
+                <div className="absolute z-50 mt-1 w-full bg-white border rounded-md shadow-lg max-h-48 overflow-y-auto">
+                  {filteredDepartments.length === 0 ? (
+                    <div className="px-3 py-2 text-xs text-muted-foreground text-center">ไม่พบแผนกที่ตรงกับคำค้นหา</div>
+                  ) : (
+                    filteredDepartments.map(dep => (
+                      <div
+                        key={dep}
+                        onClick={() => handleSelectDepartment(dep)}
+                        className={`px-3 py-2 text-xs cursor-pointer hover:bg-muted/60 transition-colors ${form.department === dep ? 'bg-primary/10 font-semibold' : ''}`}
+                      >
+                        {dep}
+                      </div>
+                    ))
+                  )}
+                </div>
+              )}
+
               <div className="mt-0.5 min-h-[16px] flex items-center gap-1 text-red-500">
                 {errors.department && (
                   <>
