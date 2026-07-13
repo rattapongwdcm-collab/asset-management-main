@@ -1,15 +1,15 @@
 import { Routes, Route } from 'react-router-dom';
-
 import Layout from './components/Layout';
 import ProtectedRoute from './components/ProtectedRoute';
+import AdminRoute from './components/AdminRoute';   // ✅ เพิ่ม import
 import Approve from './pages/Approve';
 import Login from './pages/Login';
 import Dashboard from './pages/Dashboard';
 import Device from './pages/Device';
 import Repair from './pages/Repair';
-// import Rent from './pages/Rent';
-import HistoryPage from './pages/HistoryPage'; // ➕ 1. Import หน้า HistoryPage เข้ามา
-
+import HistoryPage from './pages/HistoryPage';
+import AdminAccounts from './pages/AdminAccounts';   // ✅ เพิ่ม import
+import AdminDeviceEdit from './pages/AdminDeviceEdit';  
 import PageNotFound from './lib/PageNotFound';
 
 function App() {
@@ -19,14 +19,17 @@ function App() {
 
       <Route element={<ProtectedRoute />}>
         <Route element={<Layout />}>
-          <Route path="/"element={<Dashboard />} />
+          <Route path="/" element={<Dashboard />} />
           <Route path="/device" element={<Device />} />
           <Route path="/repair" element={<Repair />} />
-          {/* <Route path="/rent" element={<Rent />} /> */}
           <Route path="/approve" element={<Approve />} />
-          
-          {/* ➕ 2. เพิ่ม Route เส้นทางสำหรับหน้า History */}
-          <Route path="/history" element={<HistoryPage />} /> 
+          <Route path="/history" element={<HistoryPage />} />
+
+          {/* ✅ ซ้อน AdminRoute เข้าไปอีกชั้น เฉพาะ route ที่ต้องเป็น admin เท่านั้น */}
+          <Route element={<AdminRoute />}>
+            <Route path="/admin/accounts" element={<AdminAccounts />} />
+            <Route path="/admin/devices" element={<AdminDeviceEdit />} /> 
+          </Route>
         </Route>
       </Route>
 

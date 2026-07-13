@@ -230,22 +230,16 @@ export default function Repair() {
   return (
     <div className="space-y-5">
       <div className="flex items-center justify-between">
-        <h2 className="text-2xl font-bold flex items-center gap-2">
-          <Wrench className="text-primary" /> รายการซ่อมอุปกรณ์
-        </h2>
+        <h2 className="text-2xl font-bold text-foreground font-heading flex items-center gap-2">
+          <Wrench className="text-primary" size={22} />
+          รายการซ่อม </h2>
         <Button onClick={() => setIsModalOpen(true)} className="gap-1.5">
           <Plus size={16} /> แจ้งซ่อม
         </Button>
       </div>
-
-      <div className="relative">
-        <Search size={18} className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
-        <Input
-          placeholder="ค้นหารหัสเครื่อง, ชื่ออุปกรณ์ หรือคนแจ้งซ่อม..."
-          className="pl-10"
-          value={search}
-          onChange={e => setSearch(e.target.value)}
-        />
+      <div className="relative flex-1 min-w-48">
+        <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
+        <Input placeholder="ค้นหารหัสเครื่อง, ชื่ออุปกรณ์ หรือคนแจ้งซ่อม..." className="pl-9 h-10 w-full" value={search} onChange={e => setSearch(e.target.value)} />
       </div>
 
       <div className="bg-card border rounded-xl overflow-hidden shadow-sm">

@@ -15,20 +15,31 @@ export default function Login() {
   // ✅ state สำหรับสลับไปหน้า "เปลี่ยนรหัสผ่าน"
   const [mode, setMode] = useState("login"); // 'login' | 'reset'
 
-  const handleSubmit = async (e) => {
-    e.preventDefault();
-    setError("");
-    setLoading(true);
-    try {
-      const { error: authError } = await supabase.auth.signInWithPassword({ email, password });
-      if (authError) throw authError;
-      window.location.href = "/";
-    } catch (err) {
-      setError(err.message || "อีเมลหรือรหัสผ่านไม่ถูกต้อง");
-    } finally {
-      setLoading(false);
-    }
-  };
+const handleSubmit = async (e) => {
+  e.preventDefault();
+  setError("");
+  setLoading(true);
+  try {
+    const { data: authData, error: authError } = await supabase.auth.signInWithPassword({ email, password });
+    if (authError) throw authError;
+
+    // ✅ สร้าง session token ใหม่ทุกครั้งที่ login สำเร็จ
+    const sessionToken = crypto.randomUUID();
+    localStorage.setItem('active_session_token', sessionToken);
+
+    const { error: updateError } = await supabase
+      .from('profiles')
+      .update({ active_session: sessionToken })
+      .eq('id', authData.user.id);
+    if (updateError) throw updateError;
+
+    window.location.href = "/";
+  } catch (err) {
+    setError(err.message || "อีเมลหรือรหัสผ่านไม่ถูกต้อง");
+  } finally {
+    setLoading(false);
+  }
+};
 
   return (
     <AuthLayout

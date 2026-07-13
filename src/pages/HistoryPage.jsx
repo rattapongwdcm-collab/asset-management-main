@@ -108,21 +108,16 @@ export default function HistoryPage() {
   }
 
   return (
-    <div className="p-6 space-y-6 animate-in fade-in duration-200">
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-border pb-5">
+    <div className="space-y-5">
+      <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-2xl font-bold tracking-tight text-foreground flex items-center gap-2">
-            <History className="text-primary h-6 w-6" />
-            <span>ประวัติการทำงานในระบบ (System History)</span>
-          </h1>
-          <p className="text-sm text-muted-foreground mt-1">
-            ตรวจสอบบันทึกการเพิ่ม ลบ แก้ไข เคลื่อนย้าย และแจ้งซ่อมของอุปกรณ์แต่ละชิ้น
-          </p>
+          <h2 className="text-2xl font-bold text-foreground font-heading flex items-center gap-2">
+            <History className="text-primary" size={22} />
+            ประวัติการทำงานในระบบ </h2>
         </div>
       </div>
-
-      <div className="relative ">
-        <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
+      <div className="relative flex-1 min-w-48">
+         <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
         <Input
           type="text"
           placeholder="ค้นหาด้วยชื่ออุปกรณ์, รหัสทรัพย์สิน, ผู้ถือครอง..."

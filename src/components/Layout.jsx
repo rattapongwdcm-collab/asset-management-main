@@ -1,7 +1,8 @@
 import { useState, useEffect } from 'react';
 import { Outlet, Link, useLocation } from 'react-router-dom';
 import { supabase } from '@/lib/supabase';
-import { LayoutDashboard, Monitor, Wrench, PackageOpen, LogOut, Server, ClipboardCheck, History, Menu, X } from 'lucide-react';
+import { LayoutDashboard, Monitor, Wrench, PackageOpen, LogOut, Server, ClipboardCheck, History, Menu, X, ShieldCheck,Pencil  } from 'lucide-react';
+import SessionGuard from './SessionGuard';   // ✅ เพิ่ม import
 
 const baseNavItems = [
   { label: 'Dashboard', path: '/', icon: LayoutDashboard },
@@ -31,8 +32,10 @@ export default function Layout() {
         setIsAdmin(true);
         setNavItems([
           ...baseNavItems,
-          { label: 'งานรออนุมัติ', path: '/approve', icon: ClipboardCheck },
-          { label: 'History', path: '/history', icon: History }
+          { label: 'Approve', path: '/approve', icon: ClipboardCheck },
+          { label: 'History', path: '/history', icon: History },
+          { label: 'Account ', path: '/admin/accounts', icon: ShieldCheck },
+          { label: 'Edit', path: '/admin/devices', icon: Pencil } 
         ]);
       }
     };
@@ -52,7 +55,7 @@ export default function Layout() {
 
   return (
     <div className="flex h-screen w-full overflow-hidden" style={{ background: 'hsl(var(--background))' }}>
-
+       <SessionGuard />  
       {/* ✅ Overlay สีดำจางๆ เมื่อเปิดเมนูบนมือถือ กดเพื่อปิด */}
       {sidebarOpen && (
         <div

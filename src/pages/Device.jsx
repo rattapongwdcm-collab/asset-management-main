@@ -10,7 +10,7 @@ import DeviceDetailDialog from '@/components/Device/DeviceDetailDialog';
 import { Plus, Search, Filter } from "lucide-react";
 import DeviceEditDialog from '@/components/Device/DeviceEditDialog';
 import { logDeviceHistory } from '@/lib/deviceHistory';
-
+import {Monitor} from 'lucide-react'
 const statusColors = {
   'ใช้งาน': { bg: '#E0F2FE', color: '#000000' },
   'สำรอง': { bg: '#DCFCE7', color: '#000000' },
@@ -184,13 +184,13 @@ export default function Device() {
     setEditItem(null);
     setSaving(false);
   };
-
   return (
     <div className="space-y-5">
       <div className="flex items-center justify-between">
         <div>
-          <h2 className="text-2xl font-bold text-foreground font-heading">Device</h2>
-          <p className="text-muted-foreground text-sm mt-0.5">จัดการอุปกรณ์ IT ทั้งหมด ({devices.length} รายการ)</p>
+          <h2 className="text-2xl font-bold text-foreground font-heading flex items-center gap-2">
+          <Monitor className="text-primary" size={22} />
+          รายการอุปกรณ์ </h2>
         </div>
         <Button onClick={openAdd} className="gap-2">
           <Plus size={16} /> เพิ่มอุปกรณ์

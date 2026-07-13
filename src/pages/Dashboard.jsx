@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { supabase } from '@/lib/supabase';
-import { Monitor, Wrench, PackageOpen, AlertTriangle, CheckCircle, Clock, TrendingUp, Activity, Laptop, Printer, Wifi, Server, Smartphone, Tablet, Package } from 'lucide-react';
-import { Link } from 'react-router-dom';
+import { Monitor, Wrench, PackageOpen, TrendingUp, Laptop, Printer, Wifi, Server, Smartphone, Tablet, Package,LayoutDashboard } from 'lucide-react';
+import { Link } from 'react-router-dom'
 
 export default function Dashboard() {
   const [stats, setStats] = useState({ devices: [], repairs: [] });
@@ -91,10 +91,10 @@ export default function Dashboard() {
   return (
     <div className="space-y-6">
       <div>
-        <h2 className="text-2xl font-bold text-foreground font-heading">Dashboard</h2>
-        <p className="text-muted-foreground text-sm mt-1">ภาพรวมระบบจัดการ IT Assets</p>
+        <h2 className="text-2xl font-bold text-foreground font-heading flex items-center gap-2">
+          <LayoutDashboard className="text-primary" size={22} />
+          รายการอุปกรณ์ </h2>
       </div>
-
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-5">
         {summaryCards.map(card => (
           <Link to={card.link} key={card.label}>

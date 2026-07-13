@@ -170,10 +170,10 @@ export default function Approve() {
     }
   };
   return (
-    <div className="space-y-6 p-6">
-      <h2 className="text-2xl font-bold flex items-center gap-2">
-        <ClipboardCheck className="text-primary" /> งานรออนุมัติ ({approvals.length})
-      </h2>
+    <div className="space-y-5">
+      <h2 className="text-2xl font-bold text-foreground font-heading flex items-center gap-2">
+        <ClipboardCheck className="text-primary" size={22} />
+        รายการอุปกรณ์ </h2>
 
       <div className="bg-card border rounded-lg shadow-sm">
         <table className="w-full text-sm">
