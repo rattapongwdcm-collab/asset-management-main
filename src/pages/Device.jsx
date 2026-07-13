@@ -10,7 +10,7 @@ import DeviceDetailDialog from '@/components/Device/DeviceDetailDialog';
 import { Plus, Search, Filter } from "lucide-react";
 import DeviceEditDialog from '@/components/Device/DeviceEditDialog';
 import { logDeviceHistory } from '@/lib/deviceHistory';
-import {Monitor} from 'lucide-react'
+import { Monitor } from 'lucide-react'
 const statusColors = {
   'ใช้งาน': { bg: '#E0F2FE', color: '#000000' },
   'สำรอง': { bg: '#DCFCE7', color: '#000000' },
@@ -100,11 +100,12 @@ export default function Device() {
     return matchSearch && matchStatus;
   });
 
-  const openAdd = () => {
-    setEditItem(null);
-    setForm(emptyForm);
-    setDialogOpen(true);
-  };
+const openAdd = () => {
+  setEditItem(null);
+  setForm(emptyForm);
+  setErrors({});  // ✅ เพิ่มบรรทัดนี้
+  setDialogOpen(true);
+};
 
   // ✅ ตอนนี้ "openEdit" คือการเปิดฟอร์มเคลื่อนย้าย — ต้องเติมค่าเข้า moveForm ไม่ใช่ form
   const openMove = (item) => {
@@ -145,6 +146,9 @@ export default function Device() {
       image_url: form.image_url || null,
       purchase_date: form.purchase_date || null,
       warranty_expire: form.warranty_expire || null,
+      purchase_price: form.purchase_price ? Number(form.purchase_price) : null,
+      installation_location: form.installation_location || null,  // ✅ เพิ่ม
+
     };
 
     let result;
@@ -189,8 +193,8 @@ export default function Device() {
       <div className="flex items-center justify-between">
         <div>
           <h2 className="text-2xl font-bold text-foreground font-heading flex items-center gap-2">
-          <Monitor className="text-primary" size={22} />
-          รายการอุปกรณ์ </h2>
+            <Monitor className="text-primary" size={22} />
+            รายการอุปกรณ์ </h2>
         </div>
         <Button onClick={openAdd} className="gap-2">
           <Plus size={16} /> เพิ่มอุปกรณ์

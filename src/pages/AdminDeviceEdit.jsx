@@ -5,10 +5,10 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import ImageCropDialog from '@/components/Device/ImageCropDialog';
 import ImageUploader from '@/components/Device/ImageUploader';
-import { Pencil, X, Check, Search, ChevronDown, ShieldAlert } from 'lucide-react';
-
+import { Pencil, X, Check, Search, ChevronDown, ShieldAlert, ChevronLeft, ChevronRight } from 'lucide-react';
+const ITEMS_PER_PAGE = 10; // ✅ 10 รายการต่อหน้า
 const categories = ['Laptop', 'Desktop', 'Monitor', 'Printer', 'Network', 'Server', 'Mobile', 'Tablet', 'Other'];
-const statuses = ['สำรอง', 'ใช้งาน', 'รออนุมัติส่งซ่อม', 'กำลังซ่อม', 'ยืม', 'เสีย'];
+const statuses = ['สำรอง', 'ใช้งาน'];
 const departments = [
     "Management", "Human Resources", "Admin", "Accounting", "Finance",
     "Information Technology", "Sales", "Modern & Online Trade",
@@ -18,7 +18,18 @@ const departments = [
     "Registration & Document Control", "Graphic Design",
 ];
 
-// ✅ ช่องค้นหาแบบ combobox ใช้ซ้ำได้ทั้งแผนก/ประเภท
+const statusColors = {
+    'ใช้งาน': { bg: '#E0F2FE', color: '#000000' },
+    'สำรอง': { bg: '#DCFCE7', color: '#000000' },
+    'กำลังซ่อม': { bg: '#FEF3C7', color: '#000000' },
+    'รออนุมัติส่งซ่อม': { bg: '#FFE4E6', color: '#9F1239' },
+    'ยืม': { bg: '#F3E8FF', color: '#000000' },
+    'เสีย': { bg: '#F1F5F9', color: '#000000' },
+    'รออนุมัติลบ': { bg: '#FFE4E6', color: '#9F1239' },
+    'รออนุมัติแก้ไข': { bg: '#FEF3C7', color: '#D97706' },
+    'รออนุมัติเคลื่อนย้าย': { bg: '#FEF3C7', color: '#D97706' },
+};
+
 function SearchSelect({ value, options, onSelect, placeholder }) {
     const [search, setSearch] = useState(value || '');
     const [open, setOpen] = useState(false);
@@ -69,6 +80,18 @@ function SearchSelect({ value, options, onSelect, placeholder }) {
     );
 }
 
+function StatusBadge({ status }) {
+    const sc = statusColors[status] || { bg: 'rgba(107,114,128,0.12)', color: '#6b7280' };
+    return (
+        <span
+            className="inline-flex items-center justify-center rounded-full text-[11px] font-medium px-2.5 py-1 shadow-sm"
+            style={{ background: sc.bg, color: sc.color }}
+        >
+            {status || '-'}
+        </span>
+    );
+}
+
 export default function AdminDeviceEdit() {
     const [devices, setDevices] = useState([]);
     const [loading, setLoading] = useState(true);
@@ -76,6 +99,9 @@ export default function AdminDeviceEdit() {
     const [editingId, setEditingId] = useState(null);
     const [editForm, setEditForm] = useState({});
     const [saving, setSaving] = useState(false);
+
+    // ✅ state สำหรับแบ่งหน้า
+    const [currentPage, setCurrentPage] = useState(1);
 
     const [imageSrc, setImageSrc] = useState(null);
     const [crop, setCrop] = useState({ x: 0, y: 0 });
@@ -99,6 +125,25 @@ export default function AdminDeviceEdit() {
             (d.asset_tag || '').toLowerCase().includes(q) ||
             (d.assigned_to || '').toLowerCase().includes(q);
     });
+
+    // ✅ คำนวณจำนวนหน้าจากผลลัพธ์ที่ค้นหาแล้ว
+    const totalPages = Math.max(1, Math.ceil(filtered.length / ITEMS_PER_PAGE));
+
+    // ✅ ดีดกลับหน้า 1 อัตโนมัติเมื่อค้นหาใหม่
+    useEffect(() => {
+        setCurrentPage(1);
+    }, [search]);
+
+    // ✅ ดีดกลับหน้า 1 ถ้าหน้าปัจจุบันเกินจำนวนหน้าที่มี (กันหน้าว่างเปล่าค้าง)
+    useEffect(() => {
+        if (currentPage > totalPages) setCurrentPage(1);
+    }, [totalPages, currentPage]);
+
+    // ✅ ตัดข้อมูลเฉพาะหน้าปัจจุบัน
+    const paginatedDevices = filtered.slice(
+        (currentPage - 1) * ITEMS_PER_PAGE,
+        currentPage * ITEMS_PER_PAGE
+    );
 
     const startEdit = (device) => {
         setEditingId(device.id);
@@ -169,6 +214,8 @@ export default function AdminDeviceEdit() {
                 status: editForm.status,
                 purchase_date: editForm.purchase_date || null,
                 warranty_expire: editForm.warranty_expire || null,
+                purchase_price: editForm.purchase_price || null,
+                installation_location: editForm.installation_location || null,
                 company: editForm.company,
                 company_contact: editForm.company_contact,
                 image_url: editForm.image_url || null,
@@ -177,11 +224,11 @@ export default function AdminDeviceEdit() {
             const { error } = await supabase.from('devices').update(payload).eq('id', editingId);
             if (error) throw error;
 
-            // สรุป field ที่เปลี่ยนไป สำหรับบันทึกประวัติ
             const changedLabels = {
                 asset_tag: 'รหัสอุปกรณ์', name: 'ชื่ออุปกรณ์', assigned_to: 'ผู้รับมอบหมาย',
                 department: 'แผนก', category: 'ประเภท', status: 'สถานะ',
                 purchase_date: 'วันที่ซื้อ', warranty_expire: 'วันหมดประกัน',
+                purchase_price: 'ราคาที่ซื้อ', installation_location: 'สถานที่ติดตั้ง',
                 company: 'บริษัท', company_contact: 'เบอร์ติดต่อ', image_url: 'รูปภาพ',
             };
             const changedFields = Object.keys(payload).filter(k => (original?.[k] ?? '') !== (payload[k] ?? ''));
@@ -204,6 +251,13 @@ export default function AdminDeviceEdit() {
         } finally {
             setSaving(false);
         }
+    };
+
+    const formatPrice = (price) => {
+        if (price === null || price === undefined || price === "") return "-";
+        const num = Number(price);
+        if (isNaN(num)) return "-";
+        return num.toLocaleString('th-TH');
     };
 
     return (
@@ -230,7 +284,7 @@ export default function AdminDeviceEdit() {
                 </div>
             ) : (
                 <div className="flex flex-col gap-2">
-                    {filtered.map(device => {
+                    {paginatedDevices.map(device => {
                         const isEditing = editingId === device.id;
                         return (
                             <div key={device.id} className="bg-card border border-border rounded-xl p-4 shadow-sm">
@@ -241,15 +295,17 @@ export default function AdminDeviceEdit() {
                                             alt=""
                                             className="w-11 h-11 rounded-lg object-cover border shrink-0 bg-muted"
                                         />
-                                        <div className="min-w-0 flex-1 grid grid-cols-2 sm:grid-cols-4 gap-x-4 gap-y-1 text-xs">
+                                        <div className="min-w-0 flex-1 grid grid-cols-2 sm:grid-cols-4 gap-x-4 gap-y-1.5 text-xs">
                                             <div><span className="text-muted-foreground">รหัส:</span> <span className="font-semibold">{device.asset_tag}</span></div>
                                             <div className="truncate"><span className="text-muted-foreground">ชื่อ:</span> <span className="font-semibold">{device.name}</span></div>
                                             <div className="truncate"><span className="text-muted-foreground">ผู้ถือ:</span> {device.assigned_to || '-'}</div>
                                             <div className="truncate"><span className="text-muted-foreground">แผนก:</span> {device.department || '-'}</div>
                                             <div><span className="text-muted-foreground">ประเภท:</span> {device.category || '-'}</div>
-                                            <div><span className="text-muted-foreground">สถานะ:</span> {device.status || '-'}</div>
+                                            <div className="flex items-center gap-1.5"><span className="text-muted-foreground">สถานะ:</span> <StatusBadge status={device.status} /></div>
                                             <div><span className="text-muted-foreground">ซื้อ:</span> {device.purchase_date || '-'}</div>
                                             <div><span className="text-muted-foreground">ประกันหมด:</span> {device.warranty_expire || '-'}</div>
+                                            <div><span className="text-muted-foreground">ราคา:</span> {formatPrice(device.purchase_price)} บาท</div>
+                                            <div className="truncate"><span className="text-muted-foreground">สถานที่:</span> {device.installation_location || '-'}</div>
                                         </div>
                                         <Button variant="ghost" size="icon" className="h-8 w-8 shrink-0" onClick={() => startEdit(device)}>
                                             <Pencil size={14} />
@@ -302,6 +358,7 @@ export default function AdminDeviceEdit() {
                                                 <div>
                                                     <label className="text-[10px] font-bold text-foreground/70">สถานะการใช้งาน</label>
                                                     <select
+                                                        placeholder="สถานะ"
                                                         value={editForm.status || ''}
                                                         onChange={e => setEditForm(f => ({ ...f, status: e.target.value }))}
                                                         className="h-8 w-full text-xs rounded-md border px-2 mt-0.5"
@@ -317,6 +374,27 @@ export default function AdminDeviceEdit() {
                                                 <div>
                                                     <label className="text-[10px] font-bold text-foreground/70">วันหมดประกัน</label>
                                                     <Input type="date" className="h-8 text-xs mt-0.5 font-mono" value={editForm.warranty_expire || ''} onChange={e => setEditForm(f => ({ ...f, warranty_expire: e.target.value }))} />
+                                                </div>
+                                                <div>
+                                                    <label className="text-[10px] font-bold text-foreground/70">ราคาที่ซื้อ (บาท)</label>
+                                                    <Input
+                                                        type="number"
+                                                        min="0"
+                                                        step="0.01"
+                                                        className="h-8 text-xs mt-0.5 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                                                        value={editForm.purchase_price || ''}
+                                                        placeholder="เช่น 25000"
+                                                        onChange={e => setEditForm(f => ({ ...f, purchase_price: e.target.value }))}
+                                                    />
+                                                </div>
+                                                <div>
+                                                    <label className="text-[10px] font-bold text-foreground/70">สถานที่ติดตั้ง</label>
+                                                    <Input
+                                                        className="h-8 text-xs mt-0.5"
+                                                        value={editForm.installation_location || ''}
+                                                        placeholder="เช่น ชั้น 3 ห้อง IT"
+                                                        onChange={e => setEditForm(f => ({ ...f, installation_location: e.target.value }))}
+                                                    />
                                                 </div>
                                                 <div>
                                                     <label className="text-[10px] font-bold text-foreground/70">บริษัท</label>
@@ -344,6 +422,41 @@ export default function AdminDeviceEdit() {
                     })}
                     {filtered.length === 0 && (
                         <p className="text-center text-sm text-muted-foreground py-10">ไม่พบอุปกรณ์ที่ค้นหา</p>
+                    )}
+
+                    {/* ✅ แถบแบ่งหน้า แสดงเฉพาะเมื่อมีมากกว่า 1 หน้า */}
+                    {totalPages > 1 && (
+                        <div className="flex items-center justify-between px-1 py-2 border-t border-border pt-4 mt-2">
+                            <p className="text-xs text-muted-foreground">
+                                แสดง {(currentPage - 1) * ITEMS_PER_PAGE + 1}–{Math.min(currentPage * ITEMS_PER_PAGE, filtered.length)} จาก {filtered.length} รายการ
+                            </p>
+
+                            <div className="flex items-center gap-1">
+                                <Button
+                                    variant="outline"
+                                    size="sm"
+                                    className="h-8 px-2.5"
+                                    disabled={currentPage === 1}
+                                    onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
+                                >
+                                    <ChevronLeft size={14} />
+                                </Button>
+
+                                <span className="text-xs text-muted-foreground px-2">
+                                    หน้า {currentPage} / {totalPages}
+                                </span>
+
+                                <Button
+                                    variant="outline"
+                                    size="sm"
+                                    className="h-8 px-2.5"
+                                    disabled={currentPage === totalPages}
+                                    onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))}
+                                >
+                                    <ChevronRight size={14} />
+                                </Button>
+                            </div>
+                        </div>
                     )}
                 </div>
             )}

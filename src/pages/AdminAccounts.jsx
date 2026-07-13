@@ -185,8 +185,8 @@ export default function AdminAccounts() {
                     </div>
 
                     <div className="flex justify-end gap-2 mt-2">
-                        <Button variant="outline" onClick={() => setAddOpen(false)} disabled={addSaving}>ยกเลิก</Button>
-                        <Button onClick={handleAdd} disabled={addSaving}>
+                        <Button className="text-xs hover:bg-[#111827] hover:text-white" variant="outline" onClick={() => setAddOpen(false)} disabled={addSaving}>ยกเลิก</Button>
+                        <Button className="text-xs hover:bg-[#111827] hover:text-white" variant="outline" onClick={handleAdd} disabled={addSaving}>
                             {addSaving ? 'กำลังสร้าง...' : 'สร้างบัญชี'}
                         </Button>
                     </div>

@@ -183,7 +183,14 @@ export default function Repair() {
     try {
       if (finalStatus === 'Completed') {
         if (deviceId) {
-          await supabase.from('devices').update({ status: 'สำรอง' }).eq('id', deviceId);
+          await supabase
+            .from('devices')
+            .update({
+              status: 'สำรอง',
+              department: null,      // ✅ เคลียร์แผนกเดิมออก
+              assigned_to: null      // ✅ เคลียร์ผู้รับมอบหมายเดิมออก
+            })
+            .eq('id', deviceId);
         }
       } else if (finalStatus === 'Cancelled') {
         if (deviceId) {
@@ -192,11 +199,15 @@ export default function Repair() {
       }
 
       await supabase.from('repairs').delete().eq('id', repairId);
+
       await logDeviceHistory({
         deviceId: deviceId,
         action: finalStatus === 'Completed' ? 'repair_completed' : 'repair_cancelled',
-        description: finalStatus === 'Completed' ? 'ซ่อมเสร็จ กลับมาใช้งานได้' : 'ซ่อมไม่ได้ อุปกรณ์เสีย',
+        description: finalStatus === 'Completed'
+          ? 'ซ่อมเสร็จ กลับมาใช้งานได้ (สถานะ: สำรอง, ไม่มีแผนก/ผู้รับมอบหมาย)'
+          : 'ซ่อมไม่ได้ อุปกรณ์เสีย',
       });
+
       loadData();
     } catch (err) {
       console.error("เกิดข้อผิดพลาดในการจัดการงานซ่อม:", err);

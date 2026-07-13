@@ -3,6 +3,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/u
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { Textarea } from '@/components/ui/textarea';
 import { supabase } from '@/lib/supabase';
 import ImageCropDialog from './ImageCropDialog';
 import ImageUploader from './ImageUploader';
@@ -30,17 +31,14 @@ export default function DeviceFormDialog({
   const [croppedAreaPixels, setCroppedAreaPixels] = useState(null);
   const [cropDialogOpen, setCropDialogOpen] = useState(false);
 
-  // ✅ state สำหรับ dropdown ค้นหา "แผนก"
   const [departmentSearch, setDepartmentSearch] = useState('');
   const [departmentDropdownOpen, setDepartmentDropdownOpen] = useState(false);
   const departmentRef = useRef(null);
 
-  // ✅ state สำหรับ dropdown ค้นหา "ประเภทอุปกรณ์"
   const [categorySearch, setCategorySearch] = useState('');
   const [categoryDropdownOpen, setCategoryDropdownOpen] = useState(false);
   const categoryRef = useRef(null);
 
-  // ✅ sync ข้อความค้นหาให้ตรงกับค่าที่เลือกไว้ใน form ทุกครั้งที่ modal เปิด/ค่าถูกเปลี่ยนจากภายนอก (เช่นตอนแก้ไข)
   useEffect(() => {
     if (isOpen) {
       setDepartmentSearch(form.department || '');
@@ -53,7 +51,6 @@ export default function DeviceFormDialog({
     }
   }, [isOpen]);
 
-  // ✅ ปิด dropdown เมื่อคลิกข้างนอก
   useEffect(() => {
     const handleClickOutside = (e) => {
       if (departmentRef.current && !departmentRef.current.contains(e.target)) {
@@ -163,6 +160,10 @@ export default function DeviceFormDialog({
     if (!form.company || form.company.trim() === "") {
       localErrors.company = "กรุณากรอกชื่อบริษัท";
     }
+    // ✅ เช็คแบบเดียวกับ company เลย — แค่เช็คว่าง ไม่ต้องเช็ครูปแบบตัวเลขซ้อน
+    if (!form.purchase_price || form.purchase_price.toString().trim() === "") {
+      localErrors.purchase_price = "กรุณากรอกราคาที่ซื้อ";
+    }
 
     if (!localErrors.asset_tag) {
       try {
@@ -215,7 +216,8 @@ export default function DeviceFormDialog({
         }
       }}
     >
-      <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto sm:rounded-2xl"
+        <DialogContent className="max-w-2xl h-[90vh] flex flex-col sm:rounded-2xl p-0 overflow-hidden"
+
         style={{
           backgroundColor: '#ffffff',
           opacity: 1,
@@ -223,26 +225,19 @@ export default function DeviceFormDialog({
           boxShadow: '0 25px 50px -12px rgb(0 0 0 / 0.25)'
         }}
       >
-        <DialogHeader className="border-b pb-3 shrink-0">
-          <DialogTitle className="flex items-center gap-2 text-base font-bold tracking-tight text-foreground">
-            <div className="p-1 bg-primary/10 rounded-lg text-primary border shadow-sm">
-              <Laptop size={15} />
-            </div>
-            <span>เพิ่มอุปกรณ์ใหม่</span>
-          </DialogTitle>
-        </DialogHeader>
+        <div className="flex-1 my-3 space-y-4 overflow-y-auto w-full">
 
-        <div className="flex-1 my-3 space-y-4 overflow-hidden w-full">
-          <div className="flex flex-col items-center justify-center bg-muted/5 py-3 px-4 rounded-xl border border-dashed w-full max-h-[130px]">
-            <div className="scale-90 transform origin-center">
+          {/* ✅ กล่องอัปโหลดรูป — จัดกึ่งกลางชัดเจนด้วย mx-auto + flex justify-center ทั้งแนวตั้งแนวนอน */}
+          <div className="flex items-center justify-center bg-muted/5 py-4 px-4 rounded-xl border border-dashed w-full">
+            <div className="mx-auto">
               <ImageUploader
                 imageUrl={form.image_url}
                 onImageChange={handleImageChangeLocal}
               />
             </div>
           </div>
+          <div className="bg-background rounded-xl border p-4 shadow-sm w-[95%] mx-auto">
 
-          <div className="bg-background rounded-xl border p-4 shadow-sm w-full">
             <div className="grid grid-cols-2 gap-x-5 gap-y-1">
 
               {/* รหัสอุปกรณ์ */}
@@ -308,7 +303,7 @@ export default function DeviceFormDialog({
                 </div>
               </div>
 
-              {/* ✅ ฝ่าย / แผนก — เปลี่ยนเป็น combobox ค้นหาได้ */}
+              {/* ฝ่าย / แผนก */}
               <div className="w-full relative" ref={departmentRef}>
                 <Label className={`text-[11px] font-bold ${errors.department ? "text-red-500" : "text-foreground/80"}`}>ฝ่าย / แผนก</Label>
                 <div className="relative mt-1">
@@ -354,7 +349,7 @@ export default function DeviceFormDialog({
                 </div>
               </div>
 
-              {/* ✅ ประเภทอุปกรณ์ — เปลี่ยนเป็น combobox ค้นหาได้ */}
+              {/* ประเภทอุปกรณ์ */}
               <div className="w-full relative" ref={categoryRef}>
                 <Label className={`text-[11px] font-bold ${errors.category ? "text-red-500" : "text-foreground/80"}`}>ประเภทอุปกรณ์</Label>
                 <div className="relative mt-1">
@@ -400,7 +395,7 @@ export default function DeviceFormDialog({
                 </div>
               </div>
 
-              {/* สถานะการใช้งาน — ยังคงเป็น Select ปกติ (ตัวเลือกน้อย ไม่จำเป็นต้องค้นหา) */}
+              {/* สถานะการใช้งาน */}
               <div className="w-full">
                 <Label className={`text-[11px] font-bold ${errors.status ? "text-red-500" : "text-foreground/80"}`}>สถานะการใช้งาน</Label>
                 <select
@@ -425,7 +420,7 @@ export default function DeviceFormDialog({
 
               {/* วันที่ซื้ออุปกรณ์ */}
               <div className="w-full border-t border-dashed pt-2 mt-1">
-                <Label className={`text-[11px] font-bold flex items-center gap-1 ${errors.warranty_expire ? "text-red-500" : "text-foreground/80"}`}>วันที่ซื้ออุปกรณ์</Label>
+                <Label className={`text-[11px] font-bold flex items-center gap-1 ${errors.purchase_date ? "text-red-500" : "text-foreground/80"}`}>วันที่ซื้ออุปกรณ์</Label>
                 <Input
                   type="date"
                   value={form.purchase_date || ""}
@@ -449,6 +444,49 @@ export default function DeviceFormDialog({
                     <>
                       <AlertCircle size={10} className="shrink-0" />
                       <p className="text-[10px] font-semibold leading-none">{errors.warranty_expire}</p>
+                    </>
+                  )}
+                </div>
+              </div>
+
+              {/* ราคาที่ซื้อ */}
+              <div className="w-full border-t border-dashed pt-2 mt-1">
+                <Label className={`text-[11px] font-bold ${errors.purchase_price ? "text-red-500" : "text-foreground/80"}`}>ราคาที่ซื้อ (บาท)</Label>
+                <Input
+                  type="number"
+                  min="0"
+                  step="0.01"
+                  value={form.purchase_price || ""}
+                  placeholder={errors.purchase_price ? errors.purchase_price : "เช่น 25000"}
+                  className={`mt-1 h-8 text-xs rounded-md transition-colors [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none ${errors.purchase_price ? "border-red-500 bg-red-50/20 placeholder:text-red-400 focus-visible:ring-red-500" : ""}`}
+                  onChange={(e) => { setForm(f => ({ ...f, purchase_price: e.target.value })); setErrors(prev => ({ ...prev, purchase_price: "" })); }}
+                />
+                <div className="mt-0.5 min-h-[16px] flex items-center gap-1 text-red-500">
+                  {errors.purchase_price && (
+                    <>
+                      <AlertCircle size={10} className="shrink-0" />
+                      <p className="text-[10px] font-semibold leading-none">{errors.purchase_price}</p>
+                    </>
+                  )}
+                </div>
+              </div>
+
+              {/* สถานที่ติดตั้ง */}
+              <div className="w-full border-t border-dashed pt-2 mt-1">
+                <Label className={`text-[11px] font-bold ${errors.installation_location ? "text-red-500" : "text-foreground/80"}`}>สถานที่ติดตั้ง</Label>
+                <Input
+                  value={form.installation_location || ""}
+                  placeholder={focusField === "installation_location" ? "" : errors.installation_location ? errors.installation_location : "เช่น ชั้น 3 ห้อง IT"}
+                  className={`mt-1 h-8 text-xs rounded-md transition-colors ${errors.installation_location ? "border-red-500 bg-red-50/20 placeholder:text-red-400 focus-visible:ring-red-500" : ""}`}
+                  onFocus={() => { setFocusField("installation_location"); setErrors(prev => ({ ...prev, installation_location: "" })); }}
+                  onBlur={() => setFocusField("")}
+                  onChange={(e) => setForm(f => ({ ...f, installation_location: e.target.value }))}
+                />
+                <div className="mt-0.5 min-h-[16px] flex items-center gap-1 text-red-500">
+                  {errors.installation_location && (
+                    <>
+                      <AlertCircle size={10} className="shrink-0" />
+                      <p className="text-[10px] font-semibold leading-none">{errors.installation_location}</p>
                     </>
                   )}
                 </div>
@@ -501,7 +539,8 @@ export default function DeviceFormDialog({
           </div>
         </div>
 
-        <div className="flex justify-end items-center gap-2 border-t pt-3 shrink-0">
+        {/* ✅ ปรับปุ่มขึ้น: ลด pt และเพิ่ม mt ลบ (ดึงแถวปุ่มขึ้นให้ใกล้เนื้อหามากขึ้น ไม่ห่างจนดูลอยติดขอบล่าง) */}
+        <div className="flex justify-end items-center gap-2 border-t px-6 py-3 shrink-0 bg-white">
           <Button
             className="hover:bg-[#111827] hover:text-white"
             variant="outline"
