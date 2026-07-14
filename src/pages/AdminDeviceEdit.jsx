@@ -6,19 +6,23 @@ import { Input } from '@/components/ui/input';
 import ImageCropDialog from '@/components/Device/ImageCropDialog';
 import ImageUploader from '@/components/Device/ImageUploader';
 import { Pencil, X, Check, Search, ChevronDown, ShieldAlert, ChevronLeft, ChevronRight } from 'lucide-react';
-const ITEMS_PER_PAGE = 10; // ✅ 10 รายการต่อหน้า
-const categories = ['Laptop', 'Desktop', 'Monitor', 'Printer', 'Network', 'Server', 'Mobile', 'Tablet', 'Other'];
-const statuses = ['สำรอง', 'ใช้งาน'];
-const departments = [
-    "Management", "Human Resources", "Admin", "Accounting", "Finance",
-    "Information Technology", "Sales", "Modern & Online Trade",
-    "International Business", "Export", "Procurement", "Purchasing",
-    "Delivery", "Shipping", "Import-Export Logistics", "Warehouse ",
-    "Production", "Research & Development", "Quality Control ",
-    "Registration & Document Control", "Graphic Design",
+
+// ── ค่าคงที่ (Constants) ────────────────────────────────────────────────
+const ITEMS_PER_PAGE = 10; // จำนวนรายการต่อหน้า
+
+const CATEGORIES = ['Laptop', 'Desktop', 'Monitor', 'Printer', 'Network', 'Server', 'Mobile', 'Tablet', 'Other'];
+const STATUSES = ['สำรอง', 'ใช้งาน'];
+const DEPARTMENTS = [
+    'Management', 'Human Resources', 'Admin', 'Accounting', 'Finance',
+    'Information Technology', 'Sales', 'Modern & Online Trade',
+    'International Business', 'Export', 'Procurement', 'Purchasing',
+    'Delivery', 'Shipping', 'Import-Export Logistics', 'Warehouse',
+    'Production', 'Research & Development', 'Quality Control',
+    'Registration & Document Control', 'Graphic Design',
 ];
 
-const statusColors = {
+// สีป้ายสถานะ (badge) แต่ละสถานะ
+const STATUS_COLORS = {
     'ใช้งาน': { bg: '#E0F2FE', color: '#000000' },
     'สำรอง': { bg: '#DCFCE7', color: '#000000' },
     'กำลังซ่อม': { bg: '#FEF3C7', color: '#000000' },
@@ -30,13 +34,36 @@ const statusColors = {
     'รออนุมัติเคลื่อนย้าย': { bg: '#FEF3C7', color: '#D97706' },
 };
 
+// ป้ายกำกับฟิลด์ ใช้ตอนบันทึก log ว่ามีการแก้ไขอะไรบ้าง
+const FIELD_LABELS = {
+    asset_tag: 'รหัสอุปกรณ์', name: 'ชื่ออุปกรณ์', assigned_to: 'ผู้รับมอบหมาย',
+    department: 'แผนก', category: 'ประเภท', status: 'สถานะ',
+    purchase_date: 'วันที่ซื้อ', warranty_expire: 'วันหมดประกัน',
+    purchase_price: 'ราคาที่ซื้อ', installation_location: 'สถานที่ติดตั้ง',
+    company: 'บริษัท', company_contact: 'เบอร์ติดต่อ', image_url: 'รูปภาพ',
+};
+
+// ── Helper Components ───────────────────────────────────────────────────
+
+/** ช่องกรอกข้อมูลพร้อมป้ายชื่อ ใช้ครอบทุก field ในโหมดแก้ไข เพื่อลดโค้ดซ้ำ */
+function FormField({ label, children }) {
+    return (
+        <div className="min-w-0">
+            <label className="text-[10px] font-bold text-foreground/70">{label}</label>
+            <div className="mt-0.5">{children}</div>
+        </div>
+    );
+}
+
+/** ช่อง dropdown ที่พิมพ์ค้นหาได้ (ใช้กับ แผนก / ประเภทอุปกรณ์) */
 function SearchSelect({ value, options, onSelect, placeholder }) {
     const [search, setSearch] = useState(value || '');
     const [open, setOpen] = useState(false);
     const ref = useRef(null);
 
-    useEffect(() => { setSearch(value || ''); }, [value]);
+    useEffect(() => setSearch(value || ''), [value]);
 
+    // ปิด dropdown เมื่อคลิกนอกกล่อง
     useEffect(() => {
         const handleClickOutside = (e) => {
             if (ref.current && !ref.current.contains(e.target)) setOpen(false);
@@ -45,7 +72,7 @@ function SearchSelect({ value, options, onSelect, placeholder }) {
         return () => document.removeEventListener('mousedown', handleClickOutside);
     }, []);
 
-    const filtered = options.filter(o => o.toLowerCase().includes(search.toLowerCase().trim()));
+    const filtered = options.filter((o) => o.toLowerCase().includes(search.toLowerCase().trim()));
 
     return (
         <div className="relative w-full" ref={ref}>
@@ -64,7 +91,7 @@ function SearchSelect({ value, options, onSelect, placeholder }) {
                     {filtered.length === 0 ? (
                         <div className="px-3 py-2 text-xs text-muted-foreground text-center">ไม่พบ</div>
                     ) : (
-                        filtered.map(o => (
+                        filtered.map((o) => (
                             <div
                                 key={o}
                                 onClick={() => { onSelect(o); setSearch(o); setOpen(false); }}
@@ -80,11 +107,12 @@ function SearchSelect({ value, options, onSelect, placeholder }) {
     );
 }
 
+/** ป้ายสถานะสี ๆ */
 function StatusBadge({ status }) {
-    const sc = statusColors[status] || { bg: 'rgba(107,114,128,0.12)', color: '#6b7280' };
+    const sc = STATUS_COLORS[status] || { bg: 'rgba(107,114,128,0.12)', color: '#6b7280' };
     return (
         <span
-            className="inline-flex items-center justify-center rounded-full text-[11px] font-medium px-2.5 py-1 shadow-sm"
+            className="inline-flex items-center justify-center rounded-full text-[11px] font-medium px-2.5 py-1 shadow-sm whitespace-nowrap"
             style={{ background: sc.bg, color: sc.color }}
         >
             {status || '-'}
@@ -92,23 +120,36 @@ function StatusBadge({ status }) {
     );
 }
 
+/** แปลงราคาเป็นรูปแบบตัวเลขไทย เช่น 25,000 */
+function formatPrice(price) {
+    if (price === null || price === undefined || price === '') return '-';
+    const num = Number(price);
+    return isNaN(num) ? '-' : num.toLocaleString('th-TH');
+}
+
+// ── Main Component ───────────────────────────────────────────────────────
 export default function AdminDeviceEdit() {
+    // ข้อมูลอุปกรณ์ทั้งหมด + สถานะโหลด
     const [devices, setDevices] = useState([]);
     const [loading, setLoading] = useState(true);
+
+    // ค้นหา + แบ่งหน้า
     const [search, setSearch] = useState('');
+    const [currentPage, setCurrentPage] = useState(1);
+
+    // แถวที่กำลังแก้ไขอยู่ (id) และข้อมูลในฟอร์มแก้ไข
     const [editingId, setEditingId] = useState(null);
     const [editForm, setEditForm] = useState({});
     const [saving, setSaving] = useState(false);
 
-    // ✅ state สำหรับแบ่งหน้า
-    const [currentPage, setCurrentPage] = useState(1);
-
+    // ครอปรูปภาพ
     const [imageSrc, setImageSrc] = useState(null);
     const [crop, setCrop] = useState({ x: 0, y: 0 });
     const [zoom, setZoom] = useState(1);
     const [croppedAreaPixels, setCroppedAreaPixels] = useState(null);
     const [cropDialogOpen, setCropDialogOpen] = useState(false);
 
+    // ── โหลดข้อมูลอุปกรณ์จาก Supabase ──────────────────────────────────
     const load = async () => {
         setLoading(true);
         const { data } = await supabase.from('devices').select('*').order('created_at', { ascending: false });
@@ -118,33 +159,28 @@ export default function AdminDeviceEdit() {
 
     useEffect(() => { load(); }, []);
 
-    const filtered = devices.filter(d => {
+    // ── ค้นหา + แบ่งหน้า (คำนวณใหม่ทุกครั้งที่ devices/search/currentPage เปลี่ยน) ──
+    const filtered = devices.filter((d) => {
         const q = search.toLowerCase().trim();
         if (!q) return true;
-        return (d.name || '').toLowerCase().includes(q) ||
+        return (
+            (d.name || '').toLowerCase().includes(q) ||
             (d.asset_tag || '').toLowerCase().includes(q) ||
-            (d.assigned_to || '').toLowerCase().includes(q);
+            (d.assigned_to || '').toLowerCase().includes(q)
+        );
     });
 
-    // ✅ คำนวณจำนวนหน้าจากผลลัพธ์ที่ค้นหาแล้ว
     const totalPages = Math.max(1, Math.ceil(filtered.length / ITEMS_PER_PAGE));
 
-    // ✅ ดีดกลับหน้า 1 อัตโนมัติเมื่อค้นหาใหม่
-    useEffect(() => {
-        setCurrentPage(1);
-    }, [search]);
+    useEffect(() => setCurrentPage(1), [search]); // ค้นหาใหม่ -> กลับหน้า 1
+    useEffect(() => { if (currentPage > totalPages) setCurrentPage(1); }, [totalPages, currentPage]); // กันหน้าว่างค้าง
 
-    // ✅ ดีดกลับหน้า 1 ถ้าหน้าปัจจุบันเกินจำนวนหน้าที่มี (กันหน้าว่างเปล่าค้าง)
-    useEffect(() => {
-        if (currentPage > totalPages) setCurrentPage(1);
-    }, [totalPages, currentPage]);
-
-    // ✅ ตัดข้อมูลเฉพาะหน้าปัจจุบัน
     const paginatedDevices = filtered.slice(
         (currentPage - 1) * ITEMS_PER_PAGE,
         currentPage * ITEMS_PER_PAGE
     );
 
+    // ── การแก้ไขแถว ────────────────────────────────────────────────────
     const startEdit = (device) => {
         setEditingId(device.id);
         setEditForm({ ...device });
@@ -155,6 +191,13 @@ export default function AdminDeviceEdit() {
         setEditForm({});
     };
 
+    /** ตัวช่วยอัปเดตฟิลด์เดียวใน editForm เพื่อลดการเขียน setEditForm ซ้ำ ๆ ในทุก input */
+    const updateField = (key) => (e) => {
+        const value = e?.target ? e.target.value : e;
+        setEditForm((f) => ({ ...f, [key]: value }));
+    };
+
+    // ── จัดการรูปภาพ / ครอปรูป ─────────────────────────────────────────
     const handleImageChange = (e) => {
         const file = e.target.files?.[0];
         if (!file) return;
@@ -168,10 +211,12 @@ export default function AdminDeviceEdit() {
 
     const saveCrop = async () => {
         if (!croppedAreaPixels || !imageSrc) return;
-        const canvas = document.createElement("canvas");
-        const ctx = canvas.getContext("2d");
+
+        const canvas = document.createElement('canvas');
         canvas.width = 300;
         canvas.height = 300;
+        const ctx = canvas.getContext('2d');
+
         const image = new Image();
         image.src = imageSrc;
         image.onload = async () => {
@@ -183,18 +228,19 @@ export default function AdminDeviceEdit() {
             );
             canvas.toBlob(async (blob) => {
                 const fileName = `${Date.now()}.png`;
-                const { error } = await supabase.storage.from("device-images").upload(fileName, blob);
+                const { error } = await supabase.storage.from('device-images').upload(fileName, blob);
                 if (error) {
-                    alert("อัปโหลดรูปภาพล้มเหลว: " + error.message);
+                    alert('อัปโหลดรูปภาพล้มเหลว: ' + error.message);
                     return;
                 }
-                const { data: { publicUrl } } = supabase.storage.from("device-images").getPublicUrl(fileName);
-                setEditForm(f => ({ ...f, image_url: publicUrl }));
+                const { data: { publicUrl } } = supabase.storage.from('device-images').getPublicUrl(fileName);
+                setEditForm((f) => ({ ...f, image_url: publicUrl }));
                 setCropDialogOpen(false);
             });
         };
     };
 
+    // ── บันทึกการแก้ไข ─────────────────────────────────────────────────
     const handleSaveRow = async () => {
         if (!editForm.asset_tag?.toString().trim() || !editForm.name?.trim()) {
             alert('กรุณากรอกรหัสอุปกรณ์และชื่ออุปกรณ์');
@@ -203,7 +249,7 @@ export default function AdminDeviceEdit() {
 
         setSaving(true);
         try {
-            const original = devices.find(d => d.id === editingId);
+            const original = devices.find((d) => d.id === editingId);
 
             const payload = {
                 asset_tag: editForm.asset_tag,
@@ -224,28 +270,20 @@ export default function AdminDeviceEdit() {
             const { error } = await supabase.from('devices').update(payload).eq('id', editingId);
             if (error) throw error;
 
-            const changedLabels = {
-                asset_tag: 'รหัสอุปกรณ์', name: 'ชื่ออุปกรณ์', assigned_to: 'ผู้รับมอบหมาย',
-                department: 'แผนก', category: 'ประเภท', status: 'สถานะ',
-                purchase_date: 'วันที่ซื้อ', warranty_expire: 'วันหมดประกัน',
-                purchase_price: 'ราคาที่ซื้อ', installation_location: 'สถานที่ติดตั้ง',
-                company: 'บริษัท', company_contact: 'เบอร์ติดต่อ', image_url: 'รูปภาพ',
-            };
-            const changedFields = Object.keys(payload).filter(k => (original?.[k] ?? '') !== (payload[k] ?? ''));
-
+            // บันทึกประวัติเฉพาะฟิลด์ที่เปลี่ยนแปลงจริง
+            const changedFields = Object.keys(payload).filter((k) => (original?.[k] ?? '') !== (payload[k] ?? ''));
             if (changedFields.length > 0) {
                 await logDeviceHistory({
                     deviceId: editingId,
                     assetTag: payload.asset_tag,
                     deviceName: payload.name,
                     action: 'edit',
-                    description: `Admin แก้ไขข้อมูลโดยตรง: ${changedFields.map(k => changedLabels[k] || k).join(', ')}`,
+                    description: `Admin แก้ไขข้อมูลโดยตรง: ${changedFields.map((k) => FIELD_LABELS[k] || k).join(', ')}`,
                 });
             }
 
             await load();
-            setEditingId(null);
-            setEditForm({});
+            cancelEdit();
         } catch (err) {
             alert('บันทึกไม่สำเร็จ: ' + err.message);
         } finally {
@@ -253,28 +291,28 @@ export default function AdminDeviceEdit() {
         }
     };
 
-    const formatPrice = (price) => {
-        if (price === null || price === undefined || price === "") return "-";
-        const num = Number(price);
-        if (isNaN(num)) return "-";
-        return num.toLocaleString('th-TH');
-    };
-
+    // ── Render ────────────────────────────────────────────────────────
     return (
-        <div className="space-y-5">
+        // max-w กันไม่ให้เนื้อหายืดกว้างเกินไปบนจอใหญ่ (24"/27"+) และ mx-auto จัดกึ่งกลาง
+        <div className="max-w-[1600px] mx-auto w-full space-y-5 px-1 sm:px-2">
+            {/* หัวข้อหน้า */}
             <div className="flex items-center justify-between">
-                <div>
-                    <h2 className="text-2xl font-bold text-foreground font-heading flex items-center gap-2">
-                        <ShieldAlert className="text-primary" size={22} />
-                        แก้ไขอุปกรณ์ (Admin)
-                    </h2>
-                </div>
+                <h2 className="text-xl sm:text-2xl font-bold text-foreground font-heading flex items-center gap-2">
+                    <ShieldAlert className="text-primary shrink-0" size={22} />
+                    แก้ไขอุปกรณ์ (Admin)
+                </h2>
             </div>
 
+            {/* ช่องค้นหา */}
             <div className="flex flex-wrap gap-3">
-                <div className="relative flex-1 min-w-48">
+                <div className="relative flex-1 min-w-[200px]">
                     <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
-                    <Input placeholder="ค้นหาชื่อ, รหัสอุปกรณ์, ผู้รับมอบหมาย..." className="pl-9 h-10 w-full" value={search} onChange={e => setSearch(e.target.value)} />
+                    <Input
+                        placeholder="ค้นหาชื่อ, รหัสอุปกรณ์, ผู้รับมอบหมาย..."
+                        className="pl-9 h-10 w-full"
+                        value={search}
+                        onChange={(e) => setSearch(e.target.value)}
+                    />
                 </div>
             </div>
 
@@ -284,18 +322,34 @@ export default function AdminDeviceEdit() {
                 </div>
             ) : (
                 <div className="flex flex-col gap-2">
-                    {paginatedDevices.map(device => {
+                    {paginatedDevices.map((device) => {
                         const isEditing = editingId === device.id;
+
                         return (
-                            <div key={device.id} className="bg-card border border-border rounded-xl p-4 shadow-sm">
+                            <div key={device.id} className="bg-card border border-border rounded-xl p-3 sm:p-4 shadow-sm">
                                 {!isEditing ? (
-                                    <div className="flex items-center gap-4">
-                                        <img
-                                            src={device.image_url || '/placeholder-device.png'}
-                                            alt=""
-                                            className="w-11 h-11 rounded-lg object-cover border shrink-0 bg-muted"
-                                        />
-                                        <div className="min-w-0 flex-1 grid grid-cols-2 sm:grid-cols-4 gap-x-4 gap-y-1.5 text-xs">
+                                    // ── โหมดแสดงผล ──────────────────────────
+                                    // มือถือ: เรียงเป็นแนวตั้ง / จอกว้างขึ้น: เรียงแนวนอน
+                                    <div className="flex flex-col sm:flex-row items-start sm:items-center gap-3 sm:gap-4">
+                                        <div className="flex items-center gap-3 w-full sm:w-auto">
+                                            <img
+                                                src={device.image_url || '/placeholder-device.png'}
+                                                alt=""
+                                                className="w-11 h-11 rounded-lg object-cover border shrink-0 bg-muted"
+                                            />
+                                            {/* ปุ่มแก้ไขย้ายมาแสดงข้างรูปในจอมือถือ เพื่อไม่ให้ต้องเลื่อนขวา */}
+                                            <Button
+                                                variant="ghost"
+                                                size="icon"
+                                                className="h-8 w-8 shrink-0 sm:hidden ml-auto"
+                                                onClick={() => startEdit(device)}
+                                            >
+                                                <Pencil size={14} />
+                                            </Button>
+                                        </div>
+
+                                        {/* กริดข้อมูล: 1 คอลัมน์บนมือถือ -> ปรับเพิ่มตามความกว้างจอ ไปจนถึง 6 คอลัมน์บนจอใหญ่ */}
+                                        <div className="min-w-0 flex-1 grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 xl:grid-cols-5 2xl:grid-cols-6 gap-x-4 gap-y-1.5 text-xs w-full">
                                             <div><span className="text-muted-foreground">รหัส:</span> <span className="font-semibold">{device.asset_tag}</span></div>
                                             <div className="truncate"><span className="text-muted-foreground">ชื่อ:</span> <span className="font-semibold">{device.name}</span></div>
                                             <div className="truncate"><span className="text-muted-foreground">ผู้ถือ:</span> {device.assigned_to || '-'}</div>
@@ -307,107 +361,111 @@ export default function AdminDeviceEdit() {
                                             <div><span className="text-muted-foreground">ราคา:</span> {formatPrice(device.purchase_price)} บาท</div>
                                             <div className="truncate"><span className="text-muted-foreground">สถานที่:</span> {device.installation_location || '-'}</div>
                                         </div>
-                                        <Button variant="ghost" size="icon" className="h-8 w-8 shrink-0" onClick={() => startEdit(device)}>
+
+                                        {/* ปุ่มแก้ไข: แสดงเฉพาะจอ sm ขึ้นไป (มือถือใช้ปุ่มด้านบนแทน) */}
+                                        <Button
+                                            variant="ghost"
+                                            size="icon"
+                                            className="h-8 w-8 shrink-0 hidden sm:inline-flex"
+                                            onClick={() => startEdit(device)}
+                                        >
                                             <Pencil size={14} />
                                         </Button>
                                     </div>
                                 ) : (
+                                    // ── โหมดแก้ไข ────────────────────────────
                                     <div className="space-y-3">
-                                        <div className="flex items-start gap-4">
-                                            <div className="flex flex-col items-center gap-1 shrink-0">
+                                        <div className="flex flex-col sm:flex-row items-start gap-4">
+                                            <div className="flex flex-col items-center gap-1 shrink-0 self-center sm:self-start">
                                                 <div className="scale-75 origin-top">
                                                     <ImageUploader imageUrl={editForm.image_url} onImageChange={handleImageChange} />
                                                 </div>
                                             </div>
 
-                                            <div className="flex-1 grid grid-cols-2 sm:grid-cols-4 gap-3">
-                                                <div>
-                                                    <label className="text-[10px] font-bold text-foreground/70">รหัสอุปกรณ์</label>
-                                                    <Input className="h-8 text-xs mt-0.5" value={editForm.asset_tag || ''} onChange={e => setEditForm(f => ({ ...f, asset_tag: e.target.value }))} />
-                                                </div>
-                                                <div>
-                                                    <label className="text-[10px] font-bold text-foreground/70">ชื่ออุปกรณ์</label>
-                                                    <Input className="h-8 text-xs mt-0.5" value={editForm.name || ''} onChange={e => setEditForm(f => ({ ...f, name: e.target.value }))} />
-                                                </div>
-                                                <div>
-                                                    <label className="text-[10px] font-bold text-foreground/70">ผู้ได้รับมอบหมาย</label>
-                                                    <Input className="h-8 text-xs mt-0.5" value={editForm.assigned_to || ''} onChange={e => setEditForm(f => ({ ...f, assigned_to: e.target.value }))} />
-                                                </div>
-                                                <div>
-                                                    <label className="text-[10px] font-bold text-foreground/70">ฝ่าย / แผนก</label>
-                                                    <div className="mt-0.5">
-                                                        <SearchSelect
-                                                            value={editForm.department}
-                                                            options={departments}
-                                                            placeholder="ค้นหาแผนก"
-                                                            onSelect={(v) => setEditForm(f => ({ ...f, department: v }))}
-                                                        />
-                                                    </div>
-                                                </div>
-                                                <div>
-                                                    <label className="text-[10px] font-bold text-foreground/70">ประเภทอุปกรณ์</label>
-                                                    <div className="mt-0.5">
-                                                        <SearchSelect
-                                                            value={editForm.category}
-                                                            options={categories}
-                                                            placeholder="ค้นหาประเภท"
-                                                            onSelect={(v) => setEditForm(f => ({ ...f, category: v }))}
-                                                        />
-                                                    </div>
-                                                </div>
-                                                <div>
-                                                    <label className="text-[10px] font-bold text-foreground/70">สถานะการใช้งาน</label>
+                                            {/* ฟอร์มแก้ไข: 1 คอลัมน์บนมือถือ -> สูงสุด 4 คอลัมน์บนจอใหญ่ (24"/27") */}
+                                            <div className="flex-1 grid grid-cols-1 xs:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3 w-full">
+                                                <FormField label="รหัสอุปกรณ์">
+                                                    <Input className="h-8 text-xs" value={editForm.asset_tag || ''} onChange={updateField('asset_tag')} />
+                                                </FormField>
+
+                                                <FormField label="ชื่ออุปกรณ์">
+                                                    <Input className="h-8 text-xs" value={editForm.name || ''} onChange={updateField('name')} />
+                                                </FormField>
+
+                                                <FormField label="ผู้ได้รับมอบหมาย">
+                                                    <Input className="h-8 text-xs" value={editForm.assigned_to || ''} onChange={updateField('assigned_to')} />
+                                                </FormField>
+
+                                                <FormField label="ฝ่าย / แผนก">
+                                                    <SearchSelect
+                                                        value={editForm.department}
+                                                        options={DEPARTMENTS}
+                                                        placeholder="ค้นหาแผนก"
+                                                        onSelect={(v) => updateField('department')(v)}
+                                                    />
+                                                </FormField>
+
+                                                <FormField label="ประเภทอุปกรณ์">
+                                                    <SearchSelect
+                                                        value={editForm.category}
+                                                        options={CATEGORIES}
+                                                        placeholder="ค้นหาประเภท"
+                                                        onSelect={(v) => updateField('category')(v)}
+                                                    />
+                                                </FormField>
+
+                                                <FormField label="สถานะการใช้งาน">
                                                     <select
-                                                        placeholder="สถานะ"
                                                         value={editForm.status || ''}
-                                                        onChange={e => setEditForm(f => ({ ...f, status: e.target.value }))}
-                                                        className="h-8 w-full text-xs rounded-md border px-2 mt-0.5"
+                                                        onChange={updateField('status')}
+                                                        className="h-8 w-full text-xs rounded-md border px-2"
                                                     >
                                                         <option value="" disabled>เลือกสถานะ</option>
-                                                        {statuses.map(s => <option key={s} value={s}>{s}</option>)}
+                                                        {STATUSES.map((s) => <option key={s} value={s}>{s}</option>)}
                                                     </select>
-                                                </div>
-                                                <div>
-                                                    <label className="text-[10px] font-bold text-foreground/70">วันที่ซื้ออุปกรณ์</label>
-                                                    <Input type="date" className="h-8 text-xs mt-0.5 font-mono" value={editForm.purchase_date || ''} onChange={e => setEditForm(f => ({ ...f, purchase_date: e.target.value }))} />
-                                                </div>
-                                                <div>
-                                                    <label className="text-[10px] font-bold text-foreground/70">วันหมดประกัน</label>
-                                                    <Input type="date" className="h-8 text-xs mt-0.5 font-mono" value={editForm.warranty_expire || ''} onChange={e => setEditForm(f => ({ ...f, warranty_expire: e.target.value }))} />
-                                                </div>
-                                                <div>
-                                                    <label className="text-[10px] font-bold text-foreground/70">ราคาที่ซื้อ (บาท)</label>
+                                                </FormField>
+
+                                                <FormField label="วันที่ซื้ออุปกรณ์">
+                                                    <Input type="date" className="h-8 text-xs font-mono" value={editForm.purchase_date || ''} onChange={updateField('purchase_date')} />
+                                                </FormField>
+
+                                                <FormField label="วันหมดประกัน">
+                                                    <Input type="date" className="h-8 text-xs font-mono" value={editForm.warranty_expire || ''} onChange={updateField('warranty_expire')} />
+                                                </FormField>
+
+                                                <FormField label="ราคาที่ซื้อ (บาท)">
                                                     <Input
                                                         type="number"
                                                         min="0"
                                                         step="0.01"
-                                                        className="h-8 text-xs mt-0.5 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
-                                                        value={editForm.purchase_price || ''}
                                                         placeholder="เช่น 25000"
-                                                        onChange={e => setEditForm(f => ({ ...f, purchase_price: e.target.value }))}
+                                                        className="h-8 text-xs [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                                                        value={editForm.purchase_price || ''}
+                                                        onChange={updateField('purchase_price')}
                                                     />
-                                                </div>
-                                                <div>
-                                                    <label className="text-[10px] font-bold text-foreground/70">สถานที่ติดตั้ง</label>
+                                                </FormField>
+
+                                                <FormField label="สถานที่ติดตั้ง">
                                                     <Input
-                                                        className="h-8 text-xs mt-0.5"
-                                                        value={editForm.installation_location || ''}
+                                                        className="h-8 text-xs"
                                                         placeholder="เช่น ชั้น 3 ห้อง IT"
-                                                        onChange={e => setEditForm(f => ({ ...f, installation_location: e.target.value }))}
+                                                        value={editForm.installation_location || ''}
+                                                        onChange={updateField('installation_location')}
                                                     />
-                                                </div>
-                                                <div>
-                                                    <label className="text-[10px] font-bold text-foreground/70">บริษัท</label>
-                                                    <Input className="h-8 text-xs mt-0.5" value={editForm.company || ''} onChange={e => setEditForm(f => ({ ...f, company: e.target.value }))} />
-                                                </div>
-                                                <div>
-                                                    <label className="text-[10px] font-bold text-foreground/70">เบอร์ผู้ติดต่อบริษัท</label>
-                                                    <Input type="number" className="h-8 text-xs mt-0.5" value={editForm.company_contact || ''} onChange={e => setEditForm(f => ({ ...f, company_contact: e.target.value }))} />
-                                                </div>
+                                                </FormField>
+
+                                                <FormField label="บริษัท">
+                                                    <Input className="h-8 text-xs" value={editForm.company || ''} onChange={updateField('company')} />
+                                                </FormField>
+
+                                                <FormField label="เบอร์ผู้ติดต่อบริษัท">
+                                                    <Input type="number" className="h-8 text-xs" value={editForm.company_contact || ''} onChange={updateField('company_contact')} />
+                                                </FormField>
                                             </div>
                                         </div>
 
-                                        <div className="flex justify-end gap-2 border-t pt-3">
+                                        {/* ปุ่มยกเลิก/บันทึก: เต็มความกว้างบนมือถือ ชิดขวาบนจอกว้าง */}
+                                        <div className="flex flex-col sm:flex-row justify-end gap-2 border-t pt-3">
                                             <Button variant="outline" size="sm" onClick={cancelEdit} disabled={saving} className="gap-1">
                                                 <X size={13} /> ยกเลิก
                                             </Button>
@@ -420,14 +478,15 @@ export default function AdminDeviceEdit() {
                             </div>
                         );
                     })}
+
                     {filtered.length === 0 && (
                         <p className="text-center text-sm text-muted-foreground py-10">ไม่พบอุปกรณ์ที่ค้นหา</p>
                     )}
 
-                    {/* ✅ แถบแบ่งหน้า แสดงเฉพาะเมื่อมีมากกว่า 1 หน้า */}
+                    {/* แถบแบ่งหน้า: แสดงเฉพาะเมื่อมีมากกว่า 1 หน้า, จัดเรียงแนวตั้งบนมือถือ */}
                     {totalPages > 1 && (
-                        <div className="flex items-center justify-between px-1 py-2 border-t border-border pt-4 mt-2">
-                            <p className="text-xs text-muted-foreground">
+                        <div className="flex flex-col sm:flex-row items-center justify-between gap-3 px-1 py-2 border-t border-border pt-4 mt-2">
+                            <p className="text-xs text-muted-foreground text-center sm:text-left">
                                 แสดง {(currentPage - 1) * ITEMS_PER_PAGE + 1}–{Math.min(currentPage * ITEMS_PER_PAGE, filtered.length)} จาก {filtered.length} รายการ
                             </p>
 
@@ -437,12 +496,12 @@ export default function AdminDeviceEdit() {
                                     size="sm"
                                     className="h-8 px-2.5"
                                     disabled={currentPage === 1}
-                                    onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
+                                    onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
                                 >
                                     <ChevronLeft size={14} />
                                 </Button>
 
-                                <span className="text-xs text-muted-foreground px-2">
+                                <span className="text-xs text-muted-foreground px-2 whitespace-nowrap">
                                     หน้า {currentPage} / {totalPages}
                                 </span>
 
@@ -451,7 +510,7 @@ export default function AdminDeviceEdit() {
                                     size="sm"
                                     className="h-8 px-2.5"
                                     disabled={currentPage === totalPages}
-                                    onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))}
+                                    onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}
                                 >
                                     <ChevronRight size={14} />
                                 </Button>
@@ -469,7 +528,7 @@ export default function AdminDeviceEdit() {
                 setCrop={setCrop}
                 zoom={zoom}
                 setZoom={setZoom}
-                onCropComplete={(area, pixels) => setCroppedAreaPixels(pixels)}
+                onCropComplete={(_area, pixels) => setCroppedAreaPixels(pixels)}
                 onSave={saveCrop}
             />
         </div>

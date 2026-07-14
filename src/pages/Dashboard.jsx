@@ -1,12 +1,36 @@
 import { useState, useEffect } from 'react';
 import { supabase } from '@/lib/supabase';
-import { Monitor, Wrench, PackageOpen, TrendingUp, Laptop, Printer, Wifi, Server, Smartphone, Tablet, Package,LayoutDashboard } from 'lucide-react';
-import { Link } from 'react-router-dom'
+import { Monitor, Wrench, PackageOpen, TrendingUp, Laptop, Printer, Wifi, Server, Smartphone, Tablet, Package, LayoutDashboard } from 'lucide-react';
+import { Link } from 'react-router-dom';
+
+// ✅ ตั้งค่าหมวดหมู่อุปกรณ์แบบ static ไว้นอก component ก็ได้ (ไม่พึ่ง state/props เลย)
+// แต่เก็บไว้ในนี้ตามเดิมเพื่อไม่ให้กระทบโครงสร้างไฟล์อื่นที่อาจ import ไปใช้
+const categoryConfig = [
+  { key: 'Laptop', label: 'Laptop', icon: Laptop, color: '#3b82f6' },
+  { key: 'Desktop', label: 'Desktop', icon: Monitor, color: '#6366f1' },
+  { key: 'Monitor', label: 'Monitor', icon: Monitor, color: '#8b5cf6' },
+  { key: 'Printer', label: 'Printer', icon: Printer, color: '#ec4899' },
+  { key: 'Network', label: 'Network', icon: Wifi, color: '#06b6d4' },
+  { key: 'Server', label: 'Server', icon: Server, color: '#f59e0b' },
+  { key: 'Mobile', label: 'Mobile', icon: Smartphone, color: '#10b981' },
+  { key: 'Tablet', label: 'Tablet', icon: Tablet, color: '#14b8a6' },
+  { key: 'Other', label: 'Other', icon: Package, color: '#6b7280' },
+];
+
+// ✅ สีประจำสถานะงานซ่อม แยกออกมานอก component เพื่อไม่ต้องสร้าง object ใหม่ทุกครั้งที่ re-render
+const repairStatusColors = {
+  Pending: '#f59e0b',
+  'In Progress': '#3b82f6',
+  Completed: '#10b981',
+  Cancelled: '#6b7280',
+  'Waiting Parts': '#8b5cf6',
+};
 
 export default function Dashboard() {
   const [stats, setStats] = useState({ devices: [], repairs: [] });
   const [loading, setLoading] = useState(true);
 
+  // ดึงข้อมูลอุปกรณ์และงานซ่อมทั้งหมดมาคำนวณสรุปในหน้านี้
   useEffect(() => {
     const load = async () => {
       const [{ data: devices }, { data: repairs }] = await Promise.all([
@@ -19,46 +43,34 @@ export default function Dashboard() {
     load();
   }, []);
 
+  // ✅ สรุปจำนวนอุปกรณ์ — เหลือเฉพาะค่าที่ถูกใช้จริงในหน้านี้ (total, available)
+  // (ตัด inUse / underRepair ออก เพราะคำนวณไว้แต่ไม่มีจุดไหนเรียกใช้เลย)
   const deviceStats = {
     total: stats.devices.length,
-    available: stats.devices.filter(d => d.status === 'Available').length,
-    inUse: stats.devices.filter(d => d.status === 'In Use').length,
-    underRepair: stats.devices.filter(d => d.status === 'Under Repair').length,
+   available: stats.devices.filter(d => d.status === 'สำรอง').length,
   };
 
+  // ✅ สรุปจำนวนงานซ่อม — เหลือเฉพาะค่าที่ถูกใช้จริงในหน้านี้ (total, pending)
+  // (ตัด inProgress / completed ออก เพราะคำนวณไว้แต่ไม่มีจุดไหนเรียกใช้เลย)
   const repairStats = {
     total: stats.repairs.length,
     pending: stats.repairs.filter(r => r.status === 'Pending').length,
-    inProgress: stats.repairs.filter(r => r.status === 'In Progress').length,
-    completed: stats.repairs.filter(r => r.status === 'Completed').length,
   };
 
   // 📊 แยกจำนวนอุปกรณ์ตามประเภท (category) จากข้อมูลจริงในทะเบียน
-  const categoryConfig = [
-    { key: 'Laptop', label: 'Laptop', icon: Laptop, color: '#3b82f6' },
-    { key: 'Desktop', label: 'Desktop', icon: Monitor, color: '#6366f1' },
-    { key: 'Monitor', label: 'Monitor', icon: Monitor, color: '#8b5cf6' },
-    { key: 'Printer', label: 'Printer', icon: Printer, color: '#ec4899' },
-    { key: 'Network', label: 'Network', icon: Wifi, color: '#06b6d4' },
-    { key: 'Server', label: 'Server', icon: Server, color: '#f59e0b' },
-    { key: 'Mobile', label: 'Mobile', icon: Smartphone, color: '#10b981' },
-    { key: 'Tablet', label: 'Tablet', icon: Tablet, color: '#14b8a6' },
-    { key: 'Other', label: 'Other', icon: Package, color: '#6b7280' },
-  ];
-
+  // อุปกรณ์ที่ category ไม่ตรงกับหมวดที่รู้จัก จะถูกจัดเข้ากลุ่ม 'Other' อัตโนมัติ
   const knownKeys = categoryConfig.map(c => c.key);
   const categoryCounts = stats.devices.reduce((acc, d) => {
     const cat = knownKeys.includes(d.category) ? d.category : 'Other';
     acc[cat] = (acc[cat] || 0) + 1;
     return acc;
   }, {});
-
   const categoryStats = categoryConfig.map(c => ({
     ...c,
     count: categoryCounts[c.key] || 0,
   }));
 
-  // ✅ เหลือแค่ 2 การ์ด: อุปกรณ์ทั้งหมด กับ งานซ่อม (ตัดการ์ด "การยืม" และ "เกินกำหนด" ออก)
+  // การ์ดสรุปด้านบนสุด — เหลือ 2 การ์ด (อุปกรณ์ทั้งหมด / งานซ่อม) ตามที่ตัดการ์ด "การยืม" ออกไปแล้ว
   const summaryCards = [
     {
       label: 'อุปกรณ์ทั้งหมด',
@@ -90,11 +102,15 @@ export default function Dashboard() {
 
   return (
     <div className="space-y-6">
+      {/* หัวข้อหน้า */}
       <div>
         <h2 className="text-2xl font-bold text-foreground font-heading flex items-center gap-2">
           <LayoutDashboard className="text-primary" size={22} />
-          รายการอุปกรณ์ </h2>
+          รายการอุปกรณ์
+        </h2>
       </div>
+
+      {/* การ์ดสรุปด้านบน: อุปกรณ์ทั้งหมด / งานซ่อม */}
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-5">
         {summaryCards.map(card => (
           <Link to={card.link} key={card.label}>
@@ -117,7 +133,7 @@ export default function Dashboard() {
         ))}
       </div>
 
-      {/* 📊 จำนวนอุปกรณ์แยกตามประเภท */}
+      {/* จำนวนอุปกรณ์แยกตามประเภท */}
       <div className="bg-card border border-border rounded-xl p-5">
         <div className="flex items-center gap-2 mb-4">
           <PackageOpen size={16} className="text-primary" />
@@ -144,6 +160,7 @@ export default function Dashboard() {
         </div>
       </div>
 
+      {/* งานซ่อมล่าสุด 5 รายการ — แสดงเฉพาะตอนมีข้อมูลงานซ่อมอยู่จริง */}
       {stats.repairs.length > 0 && (
         <div className="bg-card border border-border rounded-xl p-5">
           <div className="flex items-center justify-between mb-4">
@@ -155,8 +172,7 @@ export default function Dashboard() {
           </div>
           <div className="space-y-2">
             {stats.repairs.slice(0, 5).map(r => {
-              const colors = { Pending: '#f59e0b', 'In Progress': '#3b82f6', Completed: '#10b981', Cancelled: '#6b7280', 'Waiting Parts': '#8b5cf6' };
-              const color = colors[r.status] || '#6b7280';
+              const color = repairStatusColors[r.status] || '#6b7280';
               return (
                 <div key={r.id} className="flex items-center justify-between py-2 border-b border-border last:border-0">
                   <div>
@@ -177,4 +193,4 @@ export default function Dashboard() {
       )}
     </div>
   );
-} 
+}

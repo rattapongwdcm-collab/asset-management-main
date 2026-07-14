@@ -8,11 +8,22 @@ import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { logDeviceHistory } from '@/lib/deviceHistory';
 
+// ✅ สีและข้อความแสดงผลของแต่ละสถานะใบซ่อม แยกไว้นอก component กันสร้างซ้ำทุก render
 const statusColors = {
   'รออนุมัติแจ้งซ่อม': { bg: 'rgba(245,158,11,0.12)', color: '#f59e0b', text: 'รออนุมัติแจ้งซ่อม' },
   'กำลังซ่อม': { bg: 'rgba(59,130,246,0.12)', color: '#3b82f6', text: 'กำลังซ่อม' },
   'Completed': { bg: 'rgba(16,185,129,0.12)', color: '#10b981', text: 'ซ่อมได้' },
   'Cancelled': { bg: 'rgba(239,68,68,0.12)', color: '#ef4444', text: 'เสีย' },
+};
+
+// ✅ ฟอร์มว่างเปล่าเริ่มต้น แยกออกมาเป็นค่าคงที่ ใช้ได้ทั้งตอน init state และตอนรีเซ็ตฟอร์ม
+// (แก้บั๊กเดิม: ตอนรีเซ็ตฟอร์มใน useEffect ลืมเคลียร์ asset_tag ทำให้ค่าเก่าอาจค้างข้ามรอบเปิด modal)
+const emptyRepairForm = {
+  device_id: '',
+  device_name: '',
+  asset_tag: '',
+  reported_by: '',
+  issue_description: '',
 };
 
 export default function Repair() {
@@ -28,15 +39,10 @@ export default function Repair() {
   const [deviceDropdownOpen, setDeviceDropdownOpen] = useState(false);
   const deviceDropdownRef = useRef(null);
 
-  const [form, setForm] = useState({
-    device_id: '',
-    device_name: '',
-    asset_tag: '',
-    reported_by: '',
-    issue_description: '',
-  });
+  const [form, setForm] = useState(emptyRepairForm);
   const [error, setError] = useState('');
 
+  // โหลดข้อมูลใบซ่อม + อุปกรณ์ทั้งหมดพร้อมกัน
   const loadData = async () => {
     setLoading(true);
     try {
@@ -58,22 +64,17 @@ export default function Repair() {
     loadData();
   }, []);
 
+  // รีเซ็ตฟอร์ม + ปิด dropdown ทุกครั้งที่เปิด modal ใหม่
   useEffect(() => {
     if (isModalOpen) {
-      setForm({
-        device_id: '',
-        device_name: '',
-        reported_by: '',
-        issue_description: '',
-      });
+      setForm(emptyRepairForm);
       setDeviceSearch('');
-      setDeviceDropdownOpen(false);
       setError('');
     }
     setDeviceDropdownOpen(false);
   }, [isModalOpen]);
 
-  // ✅ ปิด dropdown เมื่อคลิกข้างนอก
+  // ปิด dropdown เมื่อคลิกข้างนอกกล่องค้นหาอุปกรณ์
   useEffect(() => {
     const handleClickOutside = (e) => {
       if (deviceDropdownRef.current && !deviceDropdownRef.current.contains(e.target)) {
@@ -98,7 +99,7 @@ export default function Repair() {
     }
   };
 
-  // ✅ กรองรายการอุปกรณ์ตามคำค้นหา (เฉพาะเครื่องสถานะ "ใช้งาน" เหมือนเดิม)
+  // กรองรายการอุปกรณ์ในดรอปดาวน์ตามคำค้นหา (เฉพาะเครื่องสถานะ "ใช้งาน" เท่านั้นที่แจ้งซ่อมได้)
   const availableDevices = devices.filter(dev => dev.status === 'ใช้งาน');
   const filteredDeviceOptions = availableDevices.filter(dev => {
     const q = deviceSearch.toLowerCase().trim();
@@ -109,6 +110,7 @@ export default function Repair() {
     );
   });
 
+  // ส่งคำขอแจ้งซ่อม: สร้าง repair + approval พร้อมกัน แล้วอัปเดตสถานะอุปกรณ์
   const handleSubmitData = async () => {
     if (!form.device_id || !form.issue_description.trim() || !form.reported_by.trim()) {
       setError('กรุณากรอกข้อมูลให้ครบถ้วน');
@@ -152,7 +154,6 @@ export default function Repair() {
           status: 'Pending',
           user_id: user?.id || null
         }]);
-
       if (insertApprovalError) throw insertApprovalError;
 
       const { error: statusError } = await supabase
@@ -160,6 +161,7 @@ export default function Repair() {
         .update({ status: 'กำลังแจ้งซ่อม' })
         .eq('id', form.device_id);
       if (statusError) throw statusError;
+
       await logDeviceHistory({
         deviceId: form.device_id,
         assetTag: selectedDevice.asset_tag,
@@ -168,9 +170,9 @@ export default function Repair() {
         description: form.issue_description.trim(),
         performedBy: form.reported_by.trim(),
       });
+
       setIsModalOpen(false);
       loadData();
-
     } catch (err) {
       console.error("รายละเอียด Error:", err);
       setError('บันทึกข้อมูลไม่สำเร็จ: ' + err.message);
@@ -179,6 +181,7 @@ export default function Repair() {
     }
   };
 
+  // ปิดงานซ่อม: "ซ่อมได้" คืนอุปกรณ์เป็นสำรอง (เคลียร์แผนก/ผู้ถือ) / "เสีย" เปลี่ยนสถานะเป็นเสียถาวร
   const handleCloseRepairJob = async (repairId, deviceId, finalStatus) => {
     try {
       if (finalStatus === 'Completed') {
@@ -187,8 +190,8 @@ export default function Repair() {
             .from('devices')
             .update({
               status: 'สำรอง',
-              department: null,      // ✅ เคลียร์แผนกเดิมออก
-              assigned_to: null      // ✅ เคลียร์ผู้รับมอบหมายเดิมออก
+              department: null,
+              assigned_to: null
             })
             .eq('id', deviceId);
         }
@@ -214,6 +217,7 @@ export default function Repair() {
     }
   };
 
+  // แสดงเฉพาะใบซ่อมที่ยัง active อยู่ (รออนุมัติ / กำลังซ่อม) + ค้นหาได้จากหลาย field
   const filtered = repairs.filter(r => {
     const searchStr = search.toLowerCase().trim();
     const currentStatus = (r.status || '').trim();
@@ -238,23 +242,102 @@ export default function Repair() {
     );
   });
 
+  // ✅ ปุ่ม action ของแต่ละใบซ่อม แยกเป็น component ย่อย ใช้ร่วมกันทั้ง mobile card และ desktop table
+  const RepairActions = ({ r }) => {
+    if (r.status === 'กำลังซ่อม') {
+      return (
+        <div className="flex gap-1.5">
+          <Button
+            variant="ghost" size="sm"
+            className="text-emerald-600 hover:text-emerald-700 hover:bg-emerald-50 h-8 gap-1 flex-1 sm:flex-none"
+            onClick={() => handleCloseRepairJob(r.id, r.device_id, 'Completed')}
+          >
+            <CheckCircle2 size={14} />
+            <span className="text-xs">ซ่อมได้</span>
+          </Button>
+          <Button
+            variant="ghost" size="sm"
+            className="text-rose-600 hover:text-rose-700 hover:bg-rose-50 h-8 gap-1 flex-1 sm:flex-none"
+            onClick={() => handleCloseRepairJob(r.id, r.device_id, 'Cancelled')}
+          >
+            <XCircle size={14} />
+            <span className="text-xs">เสีย</span>
+          </Button>
+        </div>
+      );
+    }
+    if (r.status === 'รออนุมัติแจ้งซ่อม') {
+      return (
+        <span className="text-xs text-amber-600 bg-amber-50 px-2.5 py-1 rounded-md font-medium whitespace-nowrap">
+          ⏳ รออนุมัติจากหัวหน้า
+        </span>
+      );
+    }
+    return null;
+  };
+
   return (
     <div className="space-y-5">
-      <div className="flex items-center justify-between">
+      {/* ✅ หัวข้อ + ปุ่มแจ้งซ่อม: มือถือเรียงแนวตั้งปุ่มเต็มความกว้าง / จอใหญ่เรียงแนวนอนแบบเดิม */}
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
         <h2 className="text-2xl font-bold text-foreground font-heading flex items-center gap-2">
           <Wrench className="text-primary" size={22} />
-          รายการซ่อม </h2>
-        <Button onClick={() => setIsModalOpen(true)} className="gap-1.5">
+          รายการซ่อม
+        </h2>
+        <Button onClick={() => setIsModalOpen(true)} className="gap-1.5 w-full sm:w-auto">
           <Plus size={16} /> แจ้งซ่อม
         </Button>
       </div>
-      <div className="relative flex-1 min-w-48">
+
+      <div className="relative flex-1 min-w-0 sm:min-w-48">
         <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
         <Input placeholder="ค้นหารหัสเครื่อง, ชื่ออุปกรณ์ หรือคนแจ้งซ่อม..." className="pl-9 h-10 w-full" value={search} onChange={e => setSearch(e.target.value)} />
       </div>
 
       <div className="bg-card border rounded-xl overflow-hidden shadow-sm">
-        <table className="w-full text-sm">
+
+        {/* ✅ MOBILE VIEW (< md): การ์ดแถวยาว แทนตารางที่มี 7 คอลัมน์ (แน่นเกินจอมือถือ) */}
+        <div className="md:hidden divide-y divide-border">
+          {loading ? (
+            <p className="text-center py-6 text-muted-foreground text-sm">กำลังโหลดข้อมูล...</p>
+          ) : filtered.length === 0 ? (
+            <p className="text-center py-6 text-muted-foreground text-sm">ไม่พบข้อมูลการแจ้งซ่อม</p>
+          ) : (
+            filtered.map(r => {
+              const d = devices.find(dev => dev.id === r.device_id);
+              const sc = statusColors[r.status] || { bg: 'rgba(107,114,128,0.12)', color: '#6b7280', text: r.status };
+              return (
+                <div key={r.id} className="p-3.5 space-y-2.5">
+                  <div className="flex items-start justify-between gap-2">
+                    <div className="min-w-0">
+                      <p className="font-medium text-foreground text-sm truncate">{r.device_name || d?.name}</p>
+                      <p className="font-mono text-xs text-muted-foreground">{d?.asset_tag || '-'}</p>
+                    </div>
+                    <span
+                      className="px-2 py-1 rounded-full text-[11px] font-semibold shrink-0"
+                      style={{ background: sc.bg, color: sc.color }}
+                    >
+                      {sc.text}
+                    </span>
+                  </div>
+
+                  <div className="text-xs space-y-1">
+                    <p><span className="text-muted-foreground">ผู้ถือครอง:</span> {d?.assigned_to || '-'}</p>
+                    <p><span className="text-muted-foreground">ผู้แจ้ง:</span> {r.reported_by || '-'}</p>
+                    <p className="text-muted-foreground">{r.issue_description}</p>
+                  </div>
+
+                  <div className="pt-1">
+                    <RepairActions r={r} />
+                  </div>
+                </div>
+              );
+            })
+          )}
+        </div>
+
+        {/* ✅ DESKTOP / TABLET VIEW (md ขึ้นไป): ตารางเดิม */}
+        <table className="hidden md:table w-full text-sm">
           <thead className="bg-muted/50">
             <tr>
               <th className="px-4 py-3 text-left">รหัสอุปกรณ์</th>
@@ -279,7 +362,6 @@ export default function Repair() {
               filtered.map(r => {
                 const d = devices.find(dev => dev.id === r.device_id);
                 const sc = statusColors[r.status] || { bg: 'rgba(107,114,128,0.12)', color: '#6b7280', text: r.status };
-
                 return (
                   <tr key={r.id} className="hover:bg-muted/30">
                     <td className="px-4 py-3 font-mono text-xs">{d?.asset_tag || '-'}</td>
@@ -293,34 +375,8 @@ export default function Repair() {
                       </span>
                     </td>
                     <td className="px-4 py-3 text-right">
-                      <div className="flex justify-end gap-1.5">
-                        {r.status === 'กำลังซ่อม' && (
-                          <>
-                            <Button
-                              variant="ghost"
-                              size="sm"
-                              className="text-emerald-600 hover:text-emerald-700 hover:bg-emerald-50 h-8 gap-1"
-                              onClick={() => handleCloseRepairJob(r.id, r.device_id, 'Completed')}
-                            >
-                              <CheckCircle2 size={14} />
-                              <span className="text-xs">ซ่อมได้</span>
-                            </Button>
-
-                            <Button
-                              variant="ghost"
-                              size="sm"
-                              className="text-rose-600 hover:text-rose-700 hover:bg-rose-50 h-8 gap-1"
-                              onClick={() => handleCloseRepairJob(r.id, r.device_id, 'Cancelled')}
-                            >
-                              <XCircle size={14} />
-                              <span className="text-xs">เสีย</span>
-                            </Button>
-                          </>
-                        )}
-
-                        {r.status === 'รออนุมัติแจ้งซ่อม' && (
-                          <span className="text-xs text-amber-600 bg-amber-50 px-2.5 py-1 rounded-md font-medium">⏳ รออนุมัติจากหัวหน้า</span>
-                        )}
+                      <div className="flex justify-end">
+                        <RepairActions r={r} />
                       </div>
                     </td>
                   </tr>
@@ -331,7 +387,7 @@ export default function Repair() {
         </table>
       </div>
 
-      {/* MODAL ฟอร์มสร้างใบแจ้งซ่อม */}
+      {/* MODAL ฟอร์มสร้างใบแจ้งซ่อม — Dialog component รองรับ responsive อยู่แล้ว (w-[92%] บนมือถือ) */}
       <Dialog open={isModalOpen} onOpenChange={setIsModalOpen}>
         <DialogContent className="sm:max-w-[480px]">
           <DialogHeader>
@@ -349,7 +405,7 @@ export default function Repair() {
               </div>
             )}
 
-            {/* ✅ Dropdown ค้นหาอุปกรณ์ (แทนที่ Select เดิม) */}
+            {/* Dropdown ค้นหาอุปกรณ์ */}
             <div className="space-y-1.5 relative" ref={deviceDropdownRef}>
               <Label className="text-xs font-bold text-foreground/80">
                 เลือกอุปกรณ์ที่ต้องการซ่อม <span className="text-red-500">*</span>
@@ -360,12 +416,12 @@ export default function Repair() {
                   value={deviceSearch}
                   onChange={(e) => {
                     setDeviceSearch(e.target.value);
-                    setDeviceDropdownOpen(true);   // ✅ เปิดตอนพิมพ์
+                    setDeviceDropdownOpen(true);
                     if (form.device_id) {
                       setForm(prev => ({ ...prev, device_id: '', device_name: '', asset_tag: '' }));
                     }
                   }}
-                  onClick={() => setDeviceDropdownOpen(true)}   // ✅ เปิดตอนกดคลิกช่องนี้ตรงๆ
+                  onClick={() => setDeviceDropdownOpen(true)}
                   placeholder="พิมพ์ค้นหารหัสทรัพย์สิน หรือ ชื่อเครื่อง..."
                   className="h-9 text-xs pr-8"
                 />
@@ -386,8 +442,7 @@ export default function Repair() {
                       <div
                         key={dev.id}
                         onClick={() => handleDeviceChange(dev.id)}
-                        className={`px-3 py-2 text-xs cursor-pointer hover:bg-muted/60 transition-colors ${form.device_id === dev.id ? 'bg-primary/10 font-semibold' : ''
-                          }`}
+                        className={`px-3 py-2 text-xs cursor-pointer hover:bg-muted/60 transition-colors ${form.device_id === dev.id ? 'bg-primary/10 font-semibold' : ''}`}
                       >
                         [{dev.asset_tag || 'ไม่มีรหัส'}] {dev.name}
                       </div>
@@ -419,10 +474,10 @@ export default function Repair() {
           </div>
 
           <DialogFooter className="pt-2 gap-2 sm:gap-0">
-            <Button type="button" variant="outline" onClick={() => setIsModalOpen(false)} className="text-xs hover:bg-[#111827] hover:text-white ">
+            <Button type="button" variant="outline" onClick={() => setIsModalOpen(false)} className="text-xs hover:bg-[#111827] hover:text-white">
               ยกเลิก
             </Button>
-            <Button type="button" onClick={handleSubmitData} disabled={saving} variant="outline" className="text-xs hover:bg-[#111827] hover:text-white" >
+            <Button type="button" onClick={handleSubmitData} disabled={saving} variant="outline" className="text-xs hover:bg-[#111827] hover:text-white">
               {saving ? 'กำลังส่งคำขอ...' : 'ขออนุมัติแจ้งซ่อม'}
             </Button>
           </DialogFooter>

@@ -6,40 +6,61 @@ import { Label } from "@/components/ui/label";
 import { Mail, Lock, Loader2, KeyRound, ArrowLeft, CheckCircle2 } from "lucide-react";
 import AuthLayout from "@/components/AuthLayout";
 
+const MIN_PASSWORD_LENGTH = 5; // รหัสผ่านใหม่ขั้นต่ำ 5 ตัวอักษร — อยู่ระดับไฟล์เผื่อจุดอื่นอยากใช้ค่าเดียวกัน
+
+// Input ที่มีไอคอนด้านซ้าย ใช้ร่วมกันทั้งฟอร์ม login และฟอร์มเปลี่ยนรหัสผ่าน
+// (เดิมก็อปโค้ด <div className="relative"><Icon/><Input/></div> ซ้ำ 5 จุดในไฟล์นี้)
+function IconInput({ icon: Icon, className = "", ...inputProps }) {
+  return (
+    <div className="relative">
+      <Icon className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+      <Input className={`pl-10 h-11 sm:h-12 ${className}`} {...inputProps} />
+    </div>
+  );
+}
+
 export default function Login() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
 
-  // ✅ state สำหรับสลับไปหน้า "เปลี่ยนรหัสผ่าน"
+  // สลับไปหน้า "เปลี่ยนรหัสผ่าน"
   const [mode, setMode] = useState("login"); // 'login' | 'reset'
 
-const handleSubmit = async (e) => {
-  e.preventDefault();
-  setError("");
-  setLoading(true);
-  try {
-    const { data: authData, error: authError } = await supabase.auth.signInWithPassword({ email, password });
-    if (authError) throw authError;
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+    setError("");
+    setLoading(true);
+    try {
+      const { data: authData, error: authError } = await supabase.auth.signInWithPassword({ email, password });
+      if (authError) throw authError;
 
-    // ✅ สร้าง session token ใหม่ทุกครั้งที่ login สำเร็จ
-    const sessionToken = crypto.randomUUID();
-    localStorage.setItem('active_session_token', sessionToken);
+      // สร้าง session token ใหม่ทุกครั้งที่ login สำเร็จ
+      // ใช้บังคับ single-session: login เครื่อง/browser ใหม่ = เครื่องเก่าที่ token ไม่ตรงจะถูกตัดออกไป
+      const sessionToken = crypto.randomUUID();
+      localStorage.setItem("active_session_token", sessionToken);
 
-    const { error: updateError } = await supabase
-      .from('profiles')
-      .update({ active_session: sessionToken })
-      .eq('id', authData.user.id);
-    if (updateError) throw updateError;
+      const { error: updateError } = await supabase
+        .from("profiles")
+        .update({ active_session: sessionToken })
+        .eq("id", authData.user.id);
 
-    window.location.href = "/";
-  } catch (err) {
-    setError(err.message || "อีเมลหรือรหัสผ่านไม่ถูกต้อง");
-  } finally {
-    setLoading(false);
-  }
-};
+      if (updateError) {
+        // ⚠️ กันสถานะค้าง: ถ้าบันทึก session token ไม่สำเร็จ ต้อง sign out ออกทันที
+        // ไม่งั้นผู้ใช้จะ login ค้างอยู่จริงฝั่ง Supabase auth (เพราะ sign in ผ่านไปแล้ว)
+        // ทั้งที่ profiles.active_session ไม่ตรงกับเครื่องนี้ อาจทำให้ระบบเช็ค session สับสน
+        await supabase.auth.signOut();
+        throw updateError;
+      }
+
+      window.location.href = "/";
+    } catch (err) {
+      setError(err.message || "อีเมลหรือรหัสผ่านไม่ถูกต้อง");
+    } finally {
+      setLoading(false);
+    }
+  };
 
   return (
     <AuthLayout
@@ -54,49 +75,48 @@ const handleSubmit = async (e) => {
               {error}
             </div>
           )}
-          <form onSubmit={handleSubmit} className="space-y-4">
-            <div className="space-y-2">
-              <div className="relative">
-                <Mail className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-                <Input
-                  type="email"
-                  autoComplete="email"
-                  autoFocus
-                  placeholder="you@example.com"
-                  value={email}
-                  onChange={(e) => setEmail(e.target.value)}
-                  className="pl-10 h-12"
-                  required
-                />
-              </div>
-            </div>
-            <div className="space-y-2">
-              <div className="relative">
-                <Lock className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-                <Input
-                  type="password"
-                  autoComplete="current-password"
-                  placeholder="••••••••"
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                  className="pl-10 h-12"
-                  required
-                />
-              </div>
-            </div>
-            <Button type="submit" className="w-full h-12 font-medium" disabled={loading}>
+
+          {/* space-y-3 บนมือถือ / space-y-4 บนจอ sm ขึ้นไป กันฟอร์มดูอึดอัดบนจอแคบ */}
+          <form onSubmit={handleSubmit} className="space-y-3 sm:space-y-4">
+            <IconInput
+              icon={Mail}
+              type="email"
+              autoComplete="email"
+              autoFocus
+              placeholder="you@example.com"
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+              required
+            />
+
+            <IconInput
+              icon={Lock}
+              type="password"
+              autoComplete="current-password"
+              placeholder="••••••••"
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              required
+            />
+
+            <Button type="submit" className="w-full h-11 sm:h-12 font-medium" disabled={loading}>
               {loading ? (
                 <>
                   <Loader2 className="w-4 h-4 mr-2 animate-spin" />
                   กำลังเข้าสู่ระบบ...
                 </>
-              ) : "เข้าสู่ระบบ"}
+              ) : (
+                "เข้าสู่ระบบ"
+              )}
             </Button>
 
-            {/* ✅ ลิงก์ไปหน้าเปลี่ยนรหัสผ่าน */}
+            {/* ลิงก์ไปหน้าเปลี่ยนรหัสผ่าน */}
             <button
               type="button"
-              onClick={() => { setMode("reset"); setError(""); }}
+              onClick={() => {
+                setMode("reset");
+                setError("");
+              }}
               className="w-full text-center text-xs text-muted-foreground hover:text-foreground transition-colors mt-1"
             >
               ลืมรหัสผ่าน / ต้องการเปลี่ยนรหัสผ่าน?
@@ -104,23 +124,22 @@ const handleSubmit = async (e) => {
           </form>
         </>
       ) : (
-        <ResetPasswordForm onBack={() => setMode("login")} />
+        // ส่งอีเมลที่กรอกไว้แล้วในหน้า login ต่อไปให้ฟอร์มเปลี่ยนรหัสผ่าน ไม่ต้องพิมพ์ซ้ำ
+        <ResetPasswordForm initialEmail={email} onBack={() => setMode("login")} />
       )}
     </AuthLayout>
   );
 }
 
-// ✅ ฟอร์มเปลี่ยนรหัสผ่าน — ยืนยันตัวตนด้วยอีเมล + รหัสผ่านเดิมก่อน แล้วค่อยตั้งรหัสผ่านใหม่
-function ResetPasswordForm({ onBack }) {
-  const [email, setEmail] = useState("");
+// ฟอร์มเปลี่ยนรหัสผ่าน — ยืนยันตัวตนด้วยอีเมล + รหัสผ่านเดิมก่อน แล้วค่อยตั้งรหัสผ่านใหม่
+function ResetPasswordForm({ initialEmail = "", onBack }) {
+  const [email, setEmail] = useState(initialEmail);
   const [oldPassword, setOldPassword] = useState("");
   const [newPassword, setNewPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
   const [error, setError] = useState("");
   const [success, setSuccess] = useState(false);
   const [loading, setLoading] = useState(false);
-
-  const MIN_LENGTH = 5; // ✅ รหัสผ่านใหม่ขั้นต่ำ 5 ตัวอักษร ตามที่ระบุ
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -131,8 +150,8 @@ function ResetPasswordForm({ onBack }) {
       setError("กรุณากรอกข้อมูลให้ครบทุกช่อง");
       return;
     }
-    if (newPassword.length < MIN_LENGTH) {
-      setError(`รหัสผ่านใหม่ต้องมีอย่างน้อย ${MIN_LENGTH} ตัวอักษร`);
+    if (newPassword.length < MIN_PASSWORD_LENGTH) {
+      setError(`รหัสผ่านใหม่ต้องมีอย่างน้อย ${MIN_PASSWORD_LENGTH} ตัวอักษร`);
       return;
     }
     if (newPassword !== confirmPassword) {
@@ -156,9 +175,7 @@ function ResetPasswordForm({ onBack }) {
       }
 
       // 2. อัปเดตรหัสผ่านใหม่
-      const { error: updateError } = await supabase.auth.updateUser({
-        password: newPassword,
-      });
+      const { error: updateError } = await supabase.auth.updateUser({ password: newPassword });
       if (updateError) throw updateError;
 
       // 3. ออกจากระบบหลังเปลี่ยนสำเร็จ ให้ผู้ใช้ล็อกอินใหม่ด้วยรหัสผ่านใหม่เอง
@@ -182,7 +199,7 @@ function ResetPasswordForm({ onBack }) {
           <p className="font-medium text-foreground">เปลี่ยนรหัสผ่านสำเร็จ</p>
           <p className="text-sm text-muted-foreground mt-1">กรุณาเข้าสู่ระบบอีกครั้งด้วยรหัสผ่านใหม่</p>
         </div>
-        <Button onClick={onBack} className="w-full h-11">
+        <Button onClick={onBack} className="w-full h-11 sm:h-12">
           กลับไปหน้าเข้าสู่ระบบ
         </Button>
       </div>
@@ -197,83 +214,76 @@ function ResetPasswordForm({ onBack }) {
         </div>
       )}
 
-      <form onSubmit={handleSubmit} className="space-y-4">
+      <form onSubmit={handleSubmit} className="space-y-3 sm:space-y-4">
         <div className="space-y-2">
           <Label className="text-xs font-medium text-muted-foreground">อีเมล</Label>
-          <div className="relative">
-            <Mail className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-            <Input
-              type="email"
-              autoComplete="email"
-              autoFocus
-              placeholder="you@example.com"
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              className="pl-10 h-12"
-              required
-            />
-          </div>
+          <IconInput
+            icon={Mail}
+            type="email"
+            autoComplete="email"
+            autoFocus={!initialEmail}
+            placeholder="you@example.com"
+            value={email}
+            onChange={(e) => setEmail(e.target.value)}
+            required
+          />
         </div>
 
         <div className="space-y-2">
           <Label className="text-xs font-medium text-muted-foreground">รหัสผ่านเดิม</Label>
-          <div className="relative">
-            <Lock className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-            <Input
-              type="password"
-              autoComplete="current-password"
-              placeholder="รหัสผ่านปัจจุบัน"
-              value={oldPassword}
-              onChange={(e) => setOldPassword(e.target.value)}
-              className="pl-10 h-12"
-              required
-            />
-          </div>
+          <IconInput
+            icon={Lock}
+            type="password"
+            autoComplete="current-password"
+            autoFocus={!!initialEmail}
+            placeholder="รหัสผ่านปัจจุบัน"
+            value={oldPassword}
+            onChange={(e) => setOldPassword(e.target.value)}
+            required
+          />
         </div>
 
-        <div className="border-t pt-4 space-y-4">
+        <div className="border-t pt-4 space-y-3 sm:space-y-4">
           <div className="space-y-2">
-            <Label className="text-xs font-medium text-muted-foreground">รหัสผ่านใหม่ (อย่างน้อย {MIN_LENGTH} ตัวอักษร)</Label>
-            <div className="relative">
-              <KeyRound className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-              <Input
-                type="password"
-                autoComplete="new-password"
-                placeholder="••••••••"
-                value={newPassword}
-                onChange={(e) => setNewPassword(e.target.value)}
-                className="pl-10 h-12"
-                required
-                minLength={MIN_LENGTH}
-              />
-            </div>
+            <Label className="text-xs font-medium text-muted-foreground">
+              รหัสผ่านใหม่ (อย่างน้อย {MIN_PASSWORD_LENGTH} ตัวอักษร)
+            </Label>
+            <IconInput
+              icon={KeyRound}
+              type="password"
+              autoComplete="new-password"
+              placeholder="••••••••"
+              value={newPassword}
+              onChange={(e) => setNewPassword(e.target.value)}
+              required
+              minLength={MIN_PASSWORD_LENGTH}
+            />
           </div>
 
           <div className="space-y-2">
             <Label className="text-xs font-medium text-muted-foreground">ยืนยันรหัสผ่านใหม่</Label>
-            <div className="relative">
-              <KeyRound className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-              <Input
-                type="password"
-                autoComplete="new-password"
-                placeholder="••••••••"
-                value={confirmPassword}
-                onChange={(e) => setConfirmPassword(e.target.value)}
-                className="pl-10 h-12"
-                required
-                minLength={MIN_LENGTH}
-              />
-            </div>
+            <IconInput
+              icon={KeyRound}
+              type="password"
+              autoComplete="new-password"
+              placeholder="••••••••"
+              value={confirmPassword}
+              onChange={(e) => setConfirmPassword(e.target.value)}
+              required
+              minLength={MIN_PASSWORD_LENGTH}
+            />
           </div>
         </div>
 
-        <Button type="submit" className="w-full h-12 font-medium" disabled={loading}>
+        <Button type="submit" className="w-full h-11 sm:h-12 font-medium" disabled={loading}>
           {loading ? (
             <>
               <Loader2 className="w-4 h-4 mr-2 animate-spin" />
               กำลังเปลี่ยนรหัสผ่าน...
             </>
-          ) : "เปลี่ยนรหัสผ่าน"}
+          ) : (
+            "เปลี่ยนรหัสผ่าน"
+          )}
         </Button>
 
         <button

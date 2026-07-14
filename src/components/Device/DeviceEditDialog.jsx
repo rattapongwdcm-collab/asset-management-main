@@ -1,11 +1,29 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { supabase } from '@/lib/supabase';
 import { ArrowRightLeft, AlertCircle, ChevronDown } from 'lucide-react';
 import { logDeviceHistory } from '@/lib/deviceHistory';
 
+// ── Helper Components ───────────────────────────────────────────────────
+
+/** ข้อความ error ใต้ช่องกรอกข้อมูล ใช้ซ้ำได้ทุกฟิลด์ */
+function FieldError({ message }) {
+  return (
+    <div className="mt-0.5 min-h-[16px] flex items-center gap-1 text-red-500">
+      {message && (
+        <>
+          <AlertCircle size={10} className="shrink-0" />
+          <p className="text-[10px] font-semibold leading-none">{message}</p>
+        </>
+      )}
+    </div>
+  );
+}
+
+// ── Main Component ───────────────────────────────────────────────────────
 export default function DeviceEditFormDialog({
   isOpen,
   setIsOpen,
@@ -18,37 +36,38 @@ export default function DeviceEditFormDialog({
   setSaving,
   setCloseConfirmOpen,
   departments,
-  fetchDevices
+  fetchDevices,
 }) {
-  // ✅ state สำหรับ dropdown ค้นหา "แผนกปลายทาง"
+  // state สำหรับ dropdown ค้นหา "แผนกปลายทาง"
   const [departmentSearch, setDepartmentSearch] = useState('');
   const [departmentDropdownOpen, setDepartmentDropdownOpen] = useState(false);
   const departmentRef = useRef(null);
 
+  // เติมข้อมูลฟอร์มใหม่ทุกครั้งที่เปิด dialog พร้อมอุปกรณ์ที่เลือก
   useEffect(() => {
     if (isOpen && deviceData) {
       setForm({
         device_id: deviceData.id,
-        asset_tag: deviceData.asset_tag || "",
-        name: deviceData.name || "",
-        assigned_to: deviceData.assigned_to || "",
-        department: deviceData.department || "",
-        category: deviceData.category || "",
-        status: deviceData.status || "",
-        purchase_date: deviceData.purchase_date || "",
-        warranty_expire: deviceData.warranty_expire || "",
-        company: deviceData.company || "",
-        company_contact: deviceData.company_contact || "",
-        image_url: deviceData.image_url || null
+        asset_tag: deviceData.asset_tag || '',
+        name: deviceData.name || '',
+        assigned_to: deviceData.assigned_to || '',
+        department: deviceData.department || '',
+        category: deviceData.category || '',
+        status: deviceData.status || '',
+        purchase_date: deviceData.purchase_date || '',
+        warranty_expire: deviceData.warranty_expire || '',
+        company: deviceData.company || '',
+        company_contact: deviceData.company_contact || '',
+        image_url: deviceData.image_url || null,
       });
-      setDepartmentSearch(deviceData.department || "");   // ✅ sync ข้อความค้นหา
+      setDepartmentSearch(deviceData.department || ''); // sync ข้อความค้นหาให้ตรงกับข้อมูลเดิม
       setDepartmentDropdownOpen(false);
     } else {
       setDepartmentDropdownOpen(false);
     }
   }, [isOpen, deviceData, setForm]);
 
-  // ✅ ปิด dropdown เมื่อคลิกข้างนอก
+  // ปิด dropdown แผนกเมื่อคลิกนอกกล่อง
   useEffect(() => {
     const handleClickOutside = (e) => {
       if (departmentRef.current && !departmentRef.current.contains(e.target)) {
@@ -59,29 +78,30 @@ export default function DeviceEditFormDialog({
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
 
-  const filteredDepartments = departments.filter(dep =>
+  const filteredDepartments = departments.filter((dep) =>
     dep.toLowerCase().includes(departmentSearch.toLowerCase().trim())
   );
 
   const handleSelectDepartment = (dep) => {
-    setForm(f => ({ ...f, department: dep }));
-    setErrors(prev => ({ ...prev, department: '' }));
+    setForm((f) => ({ ...f, department: dep }));
+    setErrors((prev) => ({ ...prev, department: '' }));
     setDepartmentSearch(dep);
     setDepartmentDropdownOpen(false);
   };
 
+  // ── ส่งคำขอเคลื่อนย้ายอุปกรณ์ ────────────────────────────────────────
   const handleRequestMove = async () => {
     setSaving(true);
     try {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) {
-        alert("กรุณาเข้าสู่ระบบก่อนทำรายการ");
+        alert('กรุณาเข้าสู่ระบบก่อนทำรายการ');
         setSaving(false);
         return;
       }
 
-      // ✅ กันไว้ตั้งแต่ต้น: เช็คว่า device_id มีค่าจริงก่อน insert
-      // (ป้องกัน error "invalid input syntax for type uuid" ที่เจอตอนนี้)
+      // กันไว้ตั้งแต่ต้น: เช็คว่า device_id มีค่าจริงก่อน insert
+      // (ป้องกัน error "invalid input syntax for type uuid")
       if (!form.device_id) {
         throw new Error('ไม่พบรหัสอุปกรณ์ที่ต้องการเคลื่อนย้าย กรุณาปิดหน้าต่างนี้แล้วเปิดใหม่อีกครั้ง');
       }
@@ -94,8 +114,8 @@ export default function DeviceEditFormDialog({
         description: `ขอเคลื่อนย้ายอุปกรณ์ ${deviceData?.asset_tag || ''} ไปแผนก ${form.department}`,
         changed_fields: {
           department: form.department.trim(),
-          assigned_to: form.assigned_to.trim()
-        }
+          assigned_to: form.assigned_to.trim(),
+        },
       }]);
       if (approvalError) throw approvalError;
 
@@ -122,24 +142,25 @@ export default function DeviceEditFormDialog({
       setIsOpen(false);
       if (fetchDevices) fetchDevices();
     } catch (err) {
-      alert("ส่งคำขอไม่สำเร็จ: " + err.message);
+      alert('ส่งคำขอไม่สำเร็จ: ' + err.message);
     } finally {
       setSaving(false);
     }
   };
 
+  // ── ตรวจสอบข้อมูลก่อนส่งคำขอ ───────────────────────────────────────
   const validateAndSave = () => {
     const localErrors = {};
-    const departmentTrimmed = (form.department || "").trim();
-    const assignedToTrimmed = (form.assigned_to || "").trim();
+    const departmentTrimmed = (form.department || '').trim();
+    const assignedToTrimmed = (form.assigned_to || '').trim();
 
     if (!departmentTrimmed) {
-      localErrors.department = "กรุณาเลือกแผนกปลายทาง";
+      localErrors.department = 'กรุณาเลือกแผนกปลายทาง';
     }
     if (!assignedToTrimmed) {
-      localErrors.assigned_to = "กรุณากรอกผู้รับมอบหมายใหม่";
+      localErrors.assigned_to = 'กรุณากรอกผู้รับมอบหมายใหม่';
     } else if (assignedToTrimmed.length < 2) {
-      localErrors.assigned_to = "ชื่อผู้รับมอบหมายสั้นเกินไป";
+      localErrors.assigned_to = 'ชื่อผู้รับมอบหมายสั้นเกินไป';
     }
 
     if (Object.keys(localErrors).length > 0) {
@@ -147,15 +168,15 @@ export default function DeviceEditFormDialog({
       return;
     }
 
-    const sameDepartment = departmentTrimmed === (deviceData?.department || "").trim();
-    const sameAssignedTo = assignedToTrimmed === (deviceData?.assigned_to || "").trim();
+    const sameDepartment = departmentTrimmed === (deviceData?.department || '').trim();
+    const sameAssignedTo = assignedToTrimmed === (deviceData?.assigned_to || '').trim();
 
     if (sameDepartment && sameAssignedTo) {
-      setErrors({ department: "ไม่มีข้อมูลเปลี่ยนแปลง กรุณาเลือกแผนกหรือผู้รับมอบหมายใหม่" });
+      setErrors({ department: 'ไม่มีข้อมูลเปลี่ยนแปลง กรุณาเลือกแผนกหรือผู้รับมอบหมายใหม่' });
       return;
     }
 
-    setForm(f => ({ ...f, department: departmentTrimmed, assigned_to: assignedToTrimmed }));
+    setForm((f) => ({ ...f, department: departmentTrimmed, assigned_to: assignedToTrimmed }));
     handleRequestMove();
   };
 
@@ -168,8 +189,8 @@ export default function DeviceEditFormDialog({
     }
 
     const isChanged =
-      (form.department || "").trim() !== (deviceData.department || "").trim() ||
-      (form.assigned_to || "").trim() !== (deviceData.assigned_to || "").trim();
+      (form.department || '').trim() !== (deviceData.department || '').trim() ||
+      (form.assigned_to || '').trim() !== (deviceData.assigned_to || '').trim();
 
     if (isChanged) {
       setCloseConfirmOpen(true);
@@ -178,6 +199,7 @@ export default function DeviceEditFormDialog({
     }
   };
 
+  // ── Render ────────────────────────────────────────────────────────
   return (
     <Dialog
       open={isOpen}
@@ -188,12 +210,15 @@ export default function DeviceEditFormDialog({
         }
       }}
     >
-      <DialogContent className="max-w-md sm:rounded-2xl"
+      {/* w-[92vw] กันล้นขอบจอมือถือ, max-w-md พอดีบนแท็บเล็ต/จอใหญ่ (24"/27" ก็ไม่ยืดเกินความจำเป็นเพราะ dialog นี้เนื้อหาไม่เยอะ) */}
+      {/* max-h-[90vh] + overflow-y-auto กันเนื้อหาล้นจอ ในกรณีจอมือถือแนวนอนหรือคีย์บอร์ดดันพื้นที่ */}
+      <DialogContent
+        className="w-[92vw] max-w-md max-h-[90vh] overflow-y-auto sm:rounded-2xl"
         style={{
           backgroundColor: '#ffffff',
           opacity: 1,
           backdropFilter: 'none',
-          boxShadow: '0 25px 50px -12px rgb(0 0 0 / 0.25)'
+          boxShadow: '0 25px 50px -12px rgb(0 0 0 / 0.25)',
         }}
       >
         <DialogHeader className="border-b pb-3 shrink-0">
@@ -208,30 +233,41 @@ export default function DeviceEditFormDialog({
         <div className="flex-1 my-3 space-y-4 w-full">
           <div className="bg-background rounded-xl border p-4 shadow-sm w-full space-y-3">
 
+            {/* ข้อมูลอุปกรณ์ที่กำลังจะย้าย */}
             <div className="bg-muted/30 rounded-lg px-3 py-2 text-xs text-muted-foreground">
               <span className="font-semibold text-foreground">{deviceData?.name}</span>
               {deviceData?.asset_tag && <span className="ml-1 font-mono">({deviceData.asset_tag})</span>}
             </div>
 
-            {/* ✅ แผนกปลายทาง — เปลี่ยนเป็น combobox ค้นหาได้ */}
+            {/* แผนกปลายทาง — combobox ค้นหาได้ */}
             <div className="w-full relative" ref={departmentRef}>
-              <Label className={`text-[11px] font-bold ${errors.department ? "text-red-500" : "text-foreground/80"}`}>
+              <Label className={`text-[11px] font-bold ${errors.department ? 'text-red-500' : 'text-foreground/80'}`}>
                 แผนกปลายทาง
               </Label>
               <div className="relative mt-1">
-                <input
+                {/*
+                  🐛 แก้บั๊ก: เดิมใช้ <input> ดิบที่ไม่ได้กำหนดสีตัวอักษร/พื้นหลังชัดเจน
+                  ทำให้บางเครื่อง/ธีมตัวอักษรกลายเป็นสีเดียวกับพื้นหลัง (มองไม่เห็นตัวอักษร เห็นแต่เคอร์เซอร์กะพริบ)
+                  แก้โดยใช้ <Input> ของระบบ (มี text-foreground/bg-background ที่ถูกต้องอยู่แล้ว)
+                  พร้อมล็อกสีตัวอักษร/พื้นหลังไว้อีกชั้นให้ชัวร์
+                */}
+                <Input
                   value={departmentSearch}
                   onChange={(e) => {
                     setDepartmentSearch(e.target.value);
                     setDepartmentDropdownOpen(true);
                     if (form.department) {
-                      setForm(f => ({ ...f, department: '' }));
+                      setForm((f) => ({ ...f, department: '' }));
                     }
                   }}
                   onClick={() => setDepartmentDropdownOpen(true)}
-                  placeholder={errors.department ? errors.department : "ค้นหาแผนกที่จะย้ายไป"}
+                  placeholder={errors.department ? errors.department : 'ค้นหาแผนกที่จะย้ายไป'}
                   disabled={saving}
-                  className={`h-9 w-full rounded-md border px-3 pr-7 text-xs transition-colors focus:outline-none focus:ring-1 ${errors.department ? "border-red-500 bg-red-50/20 placeholder:text-red-400 focus:ring-red-500" : "border-input focus:ring-primary"}`}
+                  className={`h-9 w-full pr-7 text-xs bg-white text-foreground placeholder:text-muted-foreground transition-colors focus:outline-none focus:ring-1 ${
+                    errors.department
+                      ? 'border-red-500 bg-red-50/20 placeholder:text-red-400 focus:ring-red-500'
+                      : 'border-input focus:ring-primary'
+                  }`}
                 />
                 <ChevronDown size={13} className="absolute right-2.5 top-1/2 -translate-y-1/2 text-muted-foreground pointer-events-none" />
               </div>
@@ -241,11 +277,13 @@ export default function DeviceEditFormDialog({
                   {filteredDepartments.length === 0 ? (
                     <div className="px-3 py-2 text-xs text-muted-foreground text-center">ไม่พบแผนกที่ตรงกับคำค้นหา</div>
                   ) : (
-                    filteredDepartments.map(dep => (
+                    filteredDepartments.map((dep) => (
                       <div
                         key={dep}
                         onClick={() => handleSelectDepartment(dep)}
-                        className={`px-3 py-2 text-xs cursor-pointer hover:bg-muted/60 transition-colors ${form.department === dep ? 'bg-primary/10 font-semibold' : ''}`}
+                        className={`px-3 py-2 text-xs cursor-pointer hover:bg-muted/60 transition-colors ${
+                          form.department === dep ? 'bg-primary/10 font-semibold' : ''
+                        }`}
                       >
                         {dep}
                       </div>
@@ -254,42 +292,34 @@ export default function DeviceEditFormDialog({
                 </div>
               )}
 
-              <div className="mt-0.5 min-h-[16px] flex items-center gap-1 text-red-500">
-                {errors.department && (
-                  <>
-                    <AlertCircle size={10} className="shrink-0" />
-                    <p className="text-[10px] font-semibold leading-none">{errors.department}</p>
-                  </>
-                )}
-              </div>
+              <FieldError message={errors.department} />
             </div>
 
+            {/* ผู้รับมอบหมายใหม่ */}
             <div className="w-full">
-              <Label className={`text-[11px] font-bold ${errors.assigned_to ? "text-red-500" : "text-foreground/80"}`}>
+              <Label className={`text-[11px] font-bold ${errors.assigned_to ? 'text-red-500' : 'text-foreground/80'}`}>
                 ผู้รับมอบหมายใหม่
               </Label>
-              <input
-                value={form.assigned_to || ""}
+              <Input
+                value={form.assigned_to || ''}
                 placeholder="เช่น น.ส. ปัญญา ใจดี"
-                className={`mt-1 h-9 w-full rounded-md border px-3 text-xs transition-colors focus:outline-none focus:ring-1 ${errors.assigned_to ? "border-red-500 bg-red-50/20 placeholder:text-red-400 focus:ring-red-500" : "border-input focus:ring-primary"}`}
-                onFocus={() => setErrors(prev => ({ ...prev, assigned_to: "" }))}
-                onChange={(e) => setForm(f => ({ ...f, assigned_to: e.target.value }))}
+                className={`mt-1 h-9 w-full text-xs bg-white text-foreground transition-colors focus:outline-none focus:ring-1 ${
+                  errors.assigned_to
+                    ? 'border-red-500 bg-red-50/20 placeholder:text-red-400 focus:ring-red-500'
+                    : 'border-input focus:ring-primary'
+                }`}
+                onFocus={() => setErrors((prev) => ({ ...prev, assigned_to: '' }))}
+                onChange={(e) => setForm((f) => ({ ...f, assigned_to: e.target.value }))}
                 disabled={saving}
               />
-              <div className="mt-0.5 min-h-[16px] flex items-center gap-1 text-red-500">
-                {errors.assigned_to && (
-                  <>
-                    <AlertCircle size={10} className="shrink-0" />
-                    <p className="text-[10px] font-semibold leading-none">{errors.assigned_to}</p>
-                  </>
-                )}
-              </div>
+              <FieldError message={errors.assigned_to} />
             </div>
 
           </div>
         </div>
 
-        <div className="flex justify-end items-center gap-2 border-t pt-3 shrink-0">
+        {/* ปุ่มด้านล่าง: เต็มความกว้างเรียงแนวตั้งบนมือถือ ชิดขวาแนวนอนบนจอกว้างขึ้น */}
+        <div className="flex flex-col-reverse sm:flex-row justify-end items-stretch sm:items-center gap-2 border-t pt-3 shrink-0">
           <Button
             className="hover:bg-[#111827] hover:text-white"
             variant="outline"
@@ -306,12 +336,12 @@ export default function DeviceEditFormDialog({
             disabled={saving}
           >
             {saving ? (
-              <div className="flex items-center gap-1.5">
+              <div className="flex items-center justify-center gap-1.5">
                 <div className="animate-spin rounded-full h-3 w-3 border-b-2 border-current" />
                 <span>กำลังส่งคำขอ...</span>
               </div>
             ) : (
-              "ส่งขออนุมัติเคลื่อนย้าย"
+              'ส่งขออนุมัติเคลื่อนย้าย'
             )}
           </Button>
         </div>

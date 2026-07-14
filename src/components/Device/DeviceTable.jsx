@@ -21,7 +21,6 @@ export default function DeviceTable({
 
   const totalPages = Math.max(1, Math.ceil(filtered.length / ITEMS_PER_PAGE));
 
-  // ✅ ถ้าข้อมูลถูกกรอง/ค้นหาใหม่แล้วหน้าปัจจุบันเกินจำนวนหน้าที่มี ให้ดีดกลับไปหน้า 1
   useEffect(() => {
     if (currentPage > totalPages) {
       setCurrentPage(1);
@@ -33,48 +32,49 @@ export default function DeviceTable({
     currentPage * ITEMS_PER_PAGE
   );
 
-const handleDelete = async (deviceId) => {
-  const device = filtered.find(d => d.id === deviceId);
-  if (!device) return;
+  const handleDelete = async (deviceId) => {
+    const device = filtered.find(d => d.id === deviceId);
+    if (!device) return;
 
-  const { data: { user } } = await supabase.auth.getUser();
-  if (!user) {
-    alert("กรุณาเข้าสู่ระบบก่อนทำรายการ");
-    return;
-  }
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) {
+      alert("กรุณาเข้าสู่ระบบก่อนทำรายการ");
+      return;
+    }
 
-  try {
-    const { error: approvalError } = await supabase.from('approvals').insert([{
-      device_id: device.id,
-      device_name: device.name,
-      request_type: 'delete',
-      status: 'Pending',
-      user_id: user.id,
-      description: `ขอลบอุปกรณ์ ${device.asset_tag || ''}`
-    }]);
-    if (approvalError) throw approvalError;
+    try {
+      const { error: approvalError } = await supabase.from('approvals').insert([{
+        device_id: device.id,
+        device_name: device.name,
+        request_type: 'delete',
+        status: 'Pending',
+        user_id: user.id,
+        description: `ขอลบอุปกรณ์ ${device.asset_tag || ''}`
+      }]);
+      if (approvalError) throw approvalError;
 
-    const { error: statusError } = await supabase
-      .from('devices')
-      .update({ status: 'รออนุมัติลบ' })
-      .eq('id', device.id);
-    if (statusError) throw statusError;
-    
-    await logDeviceHistory({
-      deviceId: device.id,
-      assetTag: device.asset_tag,
-      deviceName: device.name,
-      action: 'delete_request',
-      description: `ขออนุมัติลบอุปกรณ์ ${device.asset_tag || ''}`,
-      performedBy: user.email,
-    });
-    fetchDevices();
-    setDeleteId(null);   // ✅ ปิด dialog ยืนยันแทน ไม่ต้อง alert ซ้ำ
-  } catch (error) {
-    console.error("Error:", error);
-    alert("เกิดข้อผิดพลาด: " + error.message);   // เก็บ alert ไว้เฉพาะกรณี error เท่านั้น
-  }
-};
+      const { error: statusError } = await supabase
+        .from('devices')
+        .update({ status: 'รออนุมัติลบ' })
+        .eq('id', device.id);
+      if (statusError) throw statusError;
+
+      await logDeviceHistory({
+        deviceId: device.id,
+        assetTag: device.asset_tag,
+        deviceName: device.name,
+        action: 'delete_request',
+        description: `ขออนุมัติลบอุปกรณ์ ${device.asset_tag || ''}`,
+        performedBy: user.email,
+      });
+      fetchDevices();
+      setDeleteId(null);
+    } catch (error) {
+      console.error("Error:", error);
+      alert("เกิดข้อผิดพลาด: " + error.message);
+    }
+  };
+
   const isLocked = (status) =>
     status === 'รออนุมัติลบ' ||
     status === 'รออนุมัติแก้ไข' ||
@@ -103,7 +103,6 @@ const handleDelete = async (deviceId) => {
 
     const expireDate = new Date(expireDateString);
     const today = new Date();
-
     today.setHours(0, 0, 0, 0);
     expireDate.setHours(0, 0, 0, 0);
 
@@ -111,9 +110,7 @@ const handleDelete = async (deviceId) => {
     const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
 
     const formattedDate = expireDate.toLocaleDateString('th-TH', {
-      day: 'numeric',
-      month: 'short',
-      year: 'numeric'
+      day: 'numeric', month: 'short', year: 'numeric'
     });
 
     if (diffDays < 0) {
@@ -124,7 +121,6 @@ const handleDelete = async (deviceId) => {
         </span>
       );
     }
-
     if (diffDays <= 30) {
       return (
         <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold bg-yellow-100 text-yellow-800 border border-yellow-300 shadow-sm">
@@ -133,7 +129,6 @@ const handleDelete = async (deviceId) => {
         </span>
       );
     }
-
     return (
       <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium bg-emerald-100 text-emerald-800 border border-emerald-300">
         <CheckCircle2 size={12} className="text-emerald-600" />
@@ -142,9 +137,72 @@ const handleDelete = async (deviceId) => {
     );
   };
 
+  // ✅ ปุ่ม action ชุดเดียว ใช้ร่วมกันทั้ง table (desktop) และ card (mobile)
+  const ActionButtons = ({ d, locked }) => (
+    <div className="flex items-center gap-1">
+      <Button
+        variant="ghost" size="icon" className="h-8 w-8"
+        onClick={(e) => { e.stopPropagation(); setDetailItem(d); }}
+      >
+        <Eye size={14} />
+      </Button>
+      <Button
+        variant="ghost" size="icon" className="h-8 w-8 text-foreground/70 hover:text-foreground"
+        disabled={locked}
+        onClick={(e) => { e.stopPropagation(); if (setEditItem) setEditItem(d); }}
+      >
+        <ArrowRightLeft size={14} className={locked ? 'opacity-30' : ''} />
+      </Button>
+      <Button
+        variant="ghost" size="icon" className="h-8 w-8 text-destructive hover:text-destructive"
+        disabled={locked}
+        onClick={(e) => { e.stopPropagation(); setDeleteId(d.id); }}
+      >
+        <Trash2 size={14} className={locked ? 'opacity-30' : ''} />
+      </Button>
+    </div>
+  );
+
   return (
     <div className="bg-card border border-border rounded-xl overflow-hidden shadow-sm">
-      <div className="overflow-x-auto">
+
+      {/* ✅ MOBILE VIEW (< md): แสดงเป็นการ์ดแถวยาว แทนตารางที่คอลัมน์เยอะเกินจอเล็ก */}
+      <div className="md:hidden divide-y divide-border">
+        {paginatedItems.map((d) => {
+          const sc = statusColors[d.status] || { bg: 'rgba(107,114,128,0.12)', color: '#6b7280' };
+          const locked = isLocked(d.status);
+          return (
+            <div key={d.id} className="p-3.5 space-y-2.5">
+              <div className="flex items-start justify-between gap-2">
+                <div className="min-w-0">
+                  <p className="font-medium text-foreground text-sm truncate">{d.name}</p>
+                  <p className="font-mono text-xs text-muted-foreground">{d.asset_tag || '—'}</p>
+                </div>
+                <span
+                  className="inline-flex items-center justify-center rounded-full text-xs font-medium px-2.5 h-6 shrink-0"
+                  style={{ background: sc.bg, color: sc.color }}
+                >
+                  {d.status}
+                </span>
+              </div>
+
+              <div className="grid grid-cols-2 gap-x-3 gap-y-1 text-xs">
+                <div><span className="text-muted-foreground">ประเภท:</span> {d.category || '—'}</div>
+                <div className="truncate"><span className="text-muted-foreground">แผนก:</span> {d.department || '—'}</div>
+                <div className="truncate col-span-2"><span className="text-muted-foreground">มอบหมาย:</span> {d.assigned_to || '—'}</div>
+              </div>
+
+              <div className="flex items-center justify-between pt-1">
+                {renderWarrantyStatus(d.warranty_expire)}
+                <ActionButtons d={d} locked={locked} />
+              </div>
+            </div>
+          );
+        })}
+      </div>
+
+      {/* ✅ DESKTOP / TABLET VIEW (md ขึ้นไป): ตารางเดิม พร้อม scroll แนวนอนกันคอลัมน์ล้นบนจอ tablet แคบๆ */}
+      <div className="hidden md:block overflow-x-auto">
         <table className="w-full text-sm">
           <thead>
             <tr className="border-b border-border bg-muted/40">
@@ -162,7 +220,6 @@ const handleDelete = async (deviceId) => {
             {paginatedItems.map((d) => {
               const sc = statusColors[d.status] || { bg: 'rgba(107,114,128,0.12)', color: '#6b7280' };
               const locked = isLocked(d.status);
-
               return (
                 <tr key={d.id} className="hover:bg-muted/30 transition-colors">
                   <td className="px-4 py-3 font-mono text-xs text-muted-foreground">{d.asset_tag || '—'}</td>
@@ -178,48 +235,10 @@ const handleDelete = async (deviceId) => {
                       {d.status}
                     </span>
                   </td>
-                  <td className="px-4 py-3">
-                    {renderWarrantyStatus(d.warranty_expire)}
-                  </td>
+                  <td className="px-4 py-3">{renderWarrantyStatus(d.warranty_expire)}</td>
                   <td className="px-2 py-3">
                     <div className="flex items-center gap-1 justify-end">
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        className="h-8 w-8"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          setDetailItem(d);
-                        }}
-                      >
-                        <Eye size={14} />
-                      </Button>
-
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        className="h-8 w-8 text-foreground/70 hover:text-foreground"
-                        disabled={locked}
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          if (setEditItem) setEditItem(d);
-                        }}
-                      >
-                        <ArrowRightLeft size={14} className={locked ? 'opacity-30' : ''} />
-                      </Button>
-
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        className="h-8 w-8 text-destructive hover:text-destructive"
-                        disabled={locked}
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          setDeleteId(d.id);
-                        }}
-                      >
-                        <Trash2 size={14} className={locked ? 'opacity-30' : ''} />
-                      </Button>
+                      <ActionButtons d={d} locked={locked} />
                     </div>
                   </td>
                 </tr>
@@ -229,36 +248,30 @@ const handleDelete = async (deviceId) => {
         </table>
       </div>
 
-      {/* ✅ ส่วนแบ่งหน้า แสดงเฉพาะเมื่อมีมากกว่า 1 หน้า */}
+      {/* ✅ Pagination: บนจอเล็กเรียงเป็นแนวตั้ง (ข้อความอยู่บน ปุ่มอยู่ล่าง กึ่งกลาง) จอใหญ่เรียงแนวนอนแบบเดิม */}
       {totalPages > 1 && (
-        <div className="flex items-center justify-between px-4 py-3 border-t border-border">
+        <div className="flex flex-col sm:flex-row items-center justify-between gap-2 px-4 py-3 border-t border-border">
           <p className="text-xs text-muted-foreground">
             แสดง {(currentPage - 1) * ITEMS_PER_PAGE + 1}–{Math.min(currentPage * ITEMS_PER_PAGE, filtered.length)} จาก {filtered.length} รายการ
           </p>
 
           <div className="flex items-center gap-1">
             <Button
-              variant="outline"
-              size="sm"
-              className="h-8 px-2.5"
+              variant="outline" size="sm" className="h-8 px-2.5"
               disabled={currentPage === 1}
               onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
             >
               <ChevronLeft size={14} />
             </Button>
-
             <span className="text-xs text-muted-foreground px-2">
               หน้า {currentPage} / {totalPages}
             </span>
-
             <Button
-              variant="outline"
-              size="sm"
-              className="h-8 px-2.5"
+              variant="outline" size="sm" className="h-8 px-2.5"
               disabled={currentPage === totalPages}
               onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))}
             >
-              <ChevronRight size={10} />
+              <ChevronRight size={14} />
             </Button>
           </div>
         </div>

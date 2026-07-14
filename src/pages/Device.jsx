@@ -100,12 +100,12 @@ export default function Device() {
     return matchSearch && matchStatus;
   });
 
-const openAdd = () => {
-  setEditItem(null);
-  setForm(emptyForm);
-  setErrors({});  // ✅ เพิ่มบรรทัดนี้
-  setDialogOpen(true);
-};
+  const openAdd = () => {
+    setEditItem(null);
+    setForm(emptyForm);
+    setErrors({});  // ✅ เพิ่มบรรทัดนี้
+    setDialogOpen(true);
+  };
 
   // ✅ ตอนนี้ "openEdit" คือการเปิดฟอร์มเคลื่อนย้าย — ต้องเติมค่าเข้า moveForm ไม่ใช่ form
   const openMove = (item) => {
@@ -190,31 +190,31 @@ const openAdd = () => {
   };
   return (
     <div className="space-y-5">
-      <div className="flex items-center justify-between">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
         <div>
           <h2 className="text-2xl font-bold text-foreground font-heading flex items-center gap-2">
             <Monitor className="text-primary" size={22} />
-            รายการอุปกรณ์ </h2>
+            รายการอุปกรณ์
+          </h2>
         </div>
-        <Button onClick={openAdd} className="gap-2">
+        <Button onClick={openAdd} className="gap-2 w-full sm:w-auto">
           <Plus size={16} /> เพิ่มอุปกรณ์
         </Button>
       </div>
 
-      <div className="flex flex-wrap gap-3">
-        <div className="relative flex-1 min-w-48">
+      <div className="flex flex-col sm:flex-row gap-3">
+        <div className="relative flex-1 min-w-0 sm:min-w-48">
           <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
           <Input placeholder="ค้นหาชื่อ, asset tag, ยี่ห้อ..." className="pl-9 h-10 w-full" value={search} onChange={e => setSearch(e.target.value)} />
         </div>
-
         <Select value={filterStatus} onValueChange={setFilterStatus}>
-          <SelectTrigger className="w-40 bg-card">
+          <SelectTrigger className="w-full sm:w-40 bg-card">
             <Filter size={14} className="mr-2 text-muted-foreground" />
             <SelectValue placeholder="สถานะ" />
           </SelectTrigger>
           <SelectContent>
-            <SelectItem value="all">ทุกสถานะ</SelectItem>
-            {statuses.map(s => <SelectItem key={s} value={s}>{s}</SelectItem>)}
+            <SelectItem value="all">ประเภทอุปกรณ์</SelectItem>
+            {categories.map(s => <SelectItem key={s} value={s}>{s}</SelectItem>)}
           </SelectContent>
         </Select>
       </div>
