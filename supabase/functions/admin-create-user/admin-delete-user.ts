@@ -31,7 +31,18 @@ Deno.serve(async (req) => {
       .single();
 
     if (callerProfile?.role !== "admin") {
-      return new Response(JSON.stringify({ error: "เฉพาะ Admin เท่านั้นที่สร้างบัญชีได้" }), { status: 403, headers: corsHeaders });
+      return new Response(JSON.stringify({ error: "เฉพาะ Admin เท่านั้นที่ลบบัญชีได้" }), { status: 403, headers: corsHeaders });
+    }
+
+    const { user_id } = await req.json();
+
+    if (!user_id) {
+      return new Response(JSON.stringify({ error: "กรุณาระบุ user_id" }), { status: 400, headers: corsHeaders });
+    }
+
+    // กันไม่ให้แอดมินลบบัญชีตัวเอง
+    if (user_id === callerUser.id) {
+      return new Response(JSON.stringify({ error: "ไม่สามารถลบบัญชีของตัวเองได้" }), { status: 400, headers: corsHeaders });
     }
 
     // client แบบ admin (service role) — ใช้แค่ในฟังก์ชันนี้ ไม่เคยส่งออกไป frontend
@@ -40,31 +51,19 @@ Deno.serve(async (req) => {
       Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!
     );
 
-    const { email, password, role, full_name } = await req.json();
-
-    if (!email || !password || password.length < 5) {
-      return new Response(JSON.stringify({ error: "อีเมลหรือรหัสผ่านไม่ถูกต้อง (รหัสผ่านต้องยาว 5 ตัวขึ้นไป)" }), { status: 400, headers: corsHeaders });
-    }
-
-    const { data: created, error: createErr } = await adminClient.auth.admin.createUser({
-      email,
-      password,
-      email_confirm: true, // ไม่ต้องรอ user กดยืนยันอีเมล
-    });
-    if (createErr) throw createErr;
-
-    // อัปเดต profile ที่ trigger สร้างอัตโนมัติ (ถ้ามี) หรือ insert ใหม่
-    const { error: profileErr } = await adminClient
+    // ลบ profile ก่อน เพราะถ้า profiles.id มี foreign key อ้างอิงไปที่ auth.users(id)
+    // แบบไม่ใช่ cascade การลบ auth.users ก่อนจะชน constraint แล้ว error ทันที
+    const { error: profileDeleteErr } = await adminClient
       .from("profiles")
-      .upsert({
-        id: created.user.id,
-        email,
-        full_name: full_name || null,
-        role: role === "admin" ? "admin" : "user",
-      });
-    if (profileErr) throw profileErr;
+      .delete()
+      .eq("id", user_id);
+    if (profileDeleteErr) throw profileDeleteErr;
 
-    return new Response(JSON.stringify({ success: true, user: created.user }), { headers: corsHeaders });
+    // จากนั้นค่อยลบบัญชีจริงจาก auth.users
+    const { error: deleteErr } = await adminClient.auth.admin.deleteUser(user_id);
+    if (deleteErr) throw deleteErr;
+
+    return new Response(JSON.stringify({ success: true }), { headers: corsHeaders });
   } catch (err) {
     return new Response(JSON.stringify({ error: err.message }), { status: 500, headers: corsHeaders });
   }

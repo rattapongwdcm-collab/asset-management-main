@@ -86,19 +86,20 @@ export default function Device() {
       supabase.removeChannel(channel);
     };
   }, []);
+const [filterCategory, setFilterCategory] = useState('all');
 
   const filtered = devices.filter((d) => {
-    const keyword = search.toLowerCase();
-    const matchSearch = !search ||
-      d.name?.toLowerCase().includes(keyword) ||
-      d.asset_tag?.toLowerCase().includes(keyword) ||
-      d.brand?.toLowerCase().includes(keyword) ||
-      d.department?.toLowerCase().includes(keyword) ||
-      d.assigned_to?.toLowerCase().includes(keyword);
+  const keyword = search.toLowerCase();
+  const matchSearch = !search ||
+    d.name?.toLowerCase().includes(keyword) ||
+    d.asset_tag?.toLowerCase().includes(keyword) ||
+    d.brand?.toLowerCase().includes(keyword) ||
+    d.department?.toLowerCase().includes(keyword) ||
+    d.assigned_to?.toLowerCase().includes(keyword);
 
-    const matchStatus = filterStatus === "all" || d.status === filterStatus;
-    return matchSearch && matchStatus;
-  });
+  const matchCategory = filterCategory === "all" || d.category === filterCategory;
+  return matchSearch && matchCategory;
+});
 
   const openAdd = () => {
     setEditItem(null);
@@ -207,13 +208,13 @@ export default function Device() {
           <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
           <Input placeholder="ค้นหาชื่อ, asset tag, ยี่ห้อ..." className="pl-9 h-10 w-full" value={search} onChange={e => setSearch(e.target.value)} />
         </div>
-        <Select value={filterStatus} onValueChange={setFilterStatus}>
+        <Select value={filterCategory} onValueChange={setFilterCategory}>
           <SelectTrigger className="w-full sm:w-40 bg-card">
             <Filter size={14} className="mr-2 text-muted-foreground" />
-            <SelectValue placeholder="สถานะ" />
+            <SelectValue placeholder="ประเภทอุปกรณ์" />
           </SelectTrigger>
           <SelectContent>
-            <SelectItem value="all">ประเภทอุปกรณ์</SelectItem>
+            <SelectItem value="all">ทุกประเภท</SelectItem>
             {categories.map(s => <SelectItem key={s} value={s}>{s}</SelectItem>)}
           </SelectContent>
         </Select>

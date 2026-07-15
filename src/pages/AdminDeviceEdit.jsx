@@ -466,10 +466,10 @@ export default function AdminDeviceEdit() {
 
                                         {/* ปุ่มยกเลิก/บันทึก: เต็มความกว้างบนมือถือ ชิดขวาบนจอกว้าง */}
                                         <div className="flex flex-col sm:flex-row justify-end gap-2 border-t pt-3">
-                                            <Button variant="outline" size="sm" onClick={cancelEdit} disabled={saving} className="gap-1">
+                                            <Button variant="outline" size="sm" onClick={cancelEdit} disabled={saving} className="text-xs hover:bg-[#111827] hover:text-white" >
                                                 <X size={13} /> ยกเลิก
                                             </Button>
-                                            <Button size="sm" onClick={handleSaveRow} disabled={saving} className="gap-1">
+                                            <Button variant="outline" size="sm" onClick={handleSaveRow} disabled={saving}className="text-xs hover:bg-[#111827] hover:text-white"  >
                                                 <Check size={13} /> {saving ? 'กำลังบันทึก...' : 'บันทึก'}
                                             </Button>
                                         </div>

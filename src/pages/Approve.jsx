@@ -10,6 +10,7 @@ const rejectActionMap = {
   edit: 'edit_rejected',
   move: 'move_rejected',
   delete: 'delete_rejected',
+  delete_accessory: 'delete_accessory_rejected',
 };
 
 export default function Approve() {
@@ -21,13 +22,13 @@ export default function Approve() {
   const [userRole, setUserRole] = useState(null);
   const [confirmAction, setConfirmAction] = useState({ open: false, item: null, type: '' });
 
-  // โหลดรายการคำขออนุมัติที่ยัง Pending อยู่ พร้อมข้อมูลผู้ขอและอุปกรณ์ที่เกี่ยวข้อง
+  // โหลดรายการคำขออนุมัติที่ยัง Pending อยู่ พร้อมข้อมูลผู้ขอ, อุปกรณ์ (devices) และอุปกรณ์เสริม (accessories) ที่เกี่ยวข้อง
   const loadData = async () => {
     setLoading(true);
 
     const { data, error } = await supabase
       .from('approvals')
-      .select('*, profiles (email), devices (name, asset_tag)')
+      .select('*, profiles (email), devices (name, asset_tag), accessories (name)')
       .eq('status', 'Pending') // กรองเอาเฉพาะงานที่ยังรออนุมัติ
       .order('created_at', { ascending: false });
 
@@ -41,7 +42,7 @@ export default function Approve() {
 
   useEffect(() => { loadData(); }, []);
 
-  // ดำเนินการอนุมัติ/ปฏิเสธคำขอ ตามชนิด request_type (repair / edit / move / delete)
+  // ดำเนินการอนุมัติ/ปฏิเสธคำขอ ตามชนิด request_type (repair / edit / move / delete / delete_accessory)
   const handleExecuteAction = async () => {
     const { item, type } = confirmAction;
     setSubmittingId(item.id);
@@ -90,7 +91,6 @@ export default function Approve() {
             .eq('id', item.device_id);
           if (statusError) throw statusError;
 
-          // ✅ แก้แล้ว: เดิม action/description เพี้ยนไปเป็นของ delete_approved
           await logDeviceHistory({
             deviceId: item.device_id,
             action: 'edit_approved',
@@ -109,7 +109,6 @@ export default function Approve() {
             .eq('id', item.device_id);
           if (moveError) throw moveError;
 
-          // ✅ แก้แล้ว: เดิม action เพี้ยนไปเป็น edit_approved
           await logDeviceHistory({
             deviceId: item.device_id,
             action: 'move_approved',
@@ -118,12 +117,9 @@ export default function Approve() {
           });
         }
 
-        // ---------- อนุมัติลบอุปกรณ์ ----------
+        // ---------- อนุมัติลบอุปกรณ์ (devices) ----------
         else if (requestType === 'delete') {
           // ต้อง log ก่อนลบ device จริงเสมอ ไม่งั้น FK constraint จะพังตอน insert log ทีหลัง
-          // ⚠️ หมายเหตุ: ถ้า FK ของ device_history -> devices เป็น ON DELETE CASCADE
-          // log นี้จะถูกลบทิ้งไปพร้อมกับ device ทันที ทำให้ประวัติหายจากหน้า History
-          // แนะนำให้เปลี่ยน FK เป็น ON DELETE SET NULL และเก็บชื่อ/รหัสอุปกรณ์ไว้ใน description ตรงๆ (ทำไว้ด้านล่างแล้ว)
           await logDeviceHistory({
             deviceId: item.device_id,
             action: 'delete_approved',
@@ -150,6 +146,28 @@ export default function Approve() {
           return;
         }
 
+        // ---------- อนุมัติลบอุปกรณ์เสริม (accessories) ----------
+        else if (requestType === 'delete_accessory') {
+          // อุปกรณ์เสริมไม่มีตาราง history แยก จึงลบทั้งคำขอ (ของอุปกรณ์เสริมชิ้นนี้) และตัว accessory เอง
+          const { error: cleanupError } = await supabase
+            .from('approvals')
+            .delete()
+            .eq('accessory_id', item.accessory_id);
+          if (cleanupError) throw cleanupError;
+
+          const { error: deleteError } = await supabase
+            .from('accessories')
+            .delete()
+            .eq('id', item.accessory_id);
+          if (deleteError) throw deleteError;
+
+          // ปิดงานจบตรงนี้เลย เหมือน branch 'delete' ของ devices เพราะลบทั้งแถว approvals ไปแล้ว
+          await loadData();
+          setSubmittingId(null);
+          setConfirmAction({ open: false, item: null, type: '' });
+          return;
+        }
+
         else {
           throw new Error(`ไม่รู้จัก request_type: "${item.request_type}"`);
         }
@@ -165,20 +183,21 @@ export default function Approve() {
           if (deleteRepairError) throw deleteRepairError;
         }
 
-        const { error: revertError } = await supabase
-          .from('devices')
-          .update({ status: 'ใช้งาน' })
-          .eq('id', item.device_id);
-        if (revertError) throw revertError;
+        // การปฏิเสธคำขอลบอุปกรณ์เสริม ไม่ต้องแตะตาราง devices เลย (accessories ไม่ผูกกับ devices)
+        if (requestType !== 'delete_accessory') {
+          const { error: revertError } = await supabase
+            .from('devices')
+            .update({ status: 'ใช้งาน' })
+            .eq('id', item.device_id);
+          if (revertError) throw revertError;
 
-        // ✅ แก้แล้ว: เดิม action เป็น 'move_approved' ตายตัว + description อ้าง department
-        // ที่ไม่มีอยู่ใน scope นี้ (ทำให้เกิด error "department is not defined" ทุกครั้งที่กดปฏิเสธ)
-        await logDeviceHistory({
-          deviceId: item.device_id,
-          action: rejectActionMap[requestType] || 'rejected',
-          description: `ปฏิเสธคำขอ: ${item.description || ''}`,
-          performedBy: approverEmail,
-        });
+          await logDeviceHistory({
+            deviceId: item.device_id,
+            action: rejectActionMap[requestType] || 'rejected',
+            description: `ปฏิเสธคำขอ: ${item.description || ''}`,
+            performedBy: approverEmail,
+          });
+        }
       }
 
       // ปิดงาน: อัปเดตสถานะ + บันทึกผู้อนุมัติ/ปฏิเสธไว้ในตาราง approvals เอง
@@ -201,7 +220,6 @@ export default function Approve() {
   };
 
   // ปุ่มอนุมัติ/ปฏิเสธ แยกเป็น component ย่อย ใช้ร่วมกันทั้ง mobile card และ desktop table
-  // flex-1 sm:flex-none: มือถือขยายเต็มพื้นที่ครึ่งต่อครึ่งกดง่าย / จอใหญ่กลับไปขนาดพอดีเนื้อหา
   const ApproveActions = ({ item }) => (
     <div className="flex gap-2 w-full sm:w-auto">
       <Button
@@ -225,6 +243,10 @@ export default function Approve() {
     </div>
   );
 
+  // ชื่อ/รหัสที่จะโชว์ในตาราง รองรับทั้งรายการของ devices และ accessories
+  const displayName = (item) => item.devices?.name || item.device_name || item.accessories?.name || item.accessory_name || '—';
+  const displayCode = (item) => item.devices?.asset_tag || item.description || '—';
+
   return (
     <div className="space-y-5">
       <h2 className="text-2xl font-bold text-foreground font-heading flex items-center gap-2">
@@ -245,8 +267,8 @@ export default function Approve() {
               <div key={item.id} className="p-3.5 space-y-2.5">
                 <div className="flex items-start justify-between gap-2">
                   <div className="min-w-0">
-                    <p className="font-medium text-foreground text-sm truncate">{item.devices?.name || item.device_name || '—'}</p>
-                    <p className="font-mono text-xs text-muted-foreground">{item.devices?.asset_tag || item.description || '—'}</p>
+                    <p className="font-medium text-foreground text-sm truncate">{displayName(item)}</p>
+                    <p className="font-mono text-xs text-muted-foreground">{displayCode(item)}</p>
                   </div>
                   <span className="text-xs font-semibold capitalize px-2 py-1 rounded-full bg-primary/10 text-primary shrink-0">
                     {item.request_type}
@@ -288,8 +310,8 @@ export default function Approve() {
                 <tr key={item.id} className="border-b">
                   <td className="px-4 py-3">{new Date(item.created_at).toLocaleString('th-TH')}</td>
                   <td className="px-4 py-3">{item.profiles?.email || '—'}</td>
-                  <td className="px-4 py-3">{item.devices?.asset_tag || item.description || '—'}</td>
-                  <td className="px-4 py-3">{item.devices?.name || item.device_name || '—'}</td>
+                  <td className="px-4 py-3">{displayCode(item)}</td>
+                  <td className="px-4 py-3">{displayName(item)}</td>
                   <td className="px-4 py-3 font-semibold capitalize">{item.request_type}</td>
                   <td className="px-4 py-3">
                     <div className="flex justify-center">
@@ -303,7 +325,7 @@ export default function Approve() {
         </table>
       </div>
 
-      {/* Popup ยืนยันอนุมัติ/ปฏิเสธ — padding ข้างกันชิดขอบจอมือถือ, ปุ่มสลับลำดับบนมือถือ (ยืนยันอยู่บนสุด กดง่ายด้วยนิ้วโป้ง) */}
+      {/* Popup ยืนยันอนุมัติ/ปฏิเสธ */}
       {confirmAction.open && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 px-4">
           <div className="bg-white p-6 rounded-lg shadow-2xl max-w-sm w-full border border-gray-200">

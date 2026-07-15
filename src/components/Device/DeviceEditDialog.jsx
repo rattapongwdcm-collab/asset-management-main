@@ -1,11 +1,12 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useEffect, useState, useRef } from 'react';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { supabase } from '@/lib/supabase';
-import { ArrowRightLeft, AlertCircle, ChevronDown } from 'lucide-react';
+import { ArrowRightLeft, AlertCircle } from 'lucide-react';
 import { logDeviceHistory } from '@/lib/deviceHistory';
+import PrintMoveFormDialog from './PrintMoveFormDialog'; // ⬅️ dialog ฟอร์มปริ้นขอย้ายอุปกรณ์
 
 // ── Helper Components ───────────────────────────────────────────────────
 
@@ -43,6 +44,10 @@ export default function DeviceEditFormDialog({
   const [departmentDropdownOpen, setDepartmentDropdownOpen] = useState(false);
   const departmentRef = useRef(null);
 
+  // ✅ state สำหรับ dialog ฟอร์มปริ้นขอย้ายอุปกรณ์ (แสดงหลังส่งคำขอสำเร็จ)
+  const [showPrintPreview, setShowPrintPreview] = useState(false);
+  const [printData, setPrintData] = useState(null);
+
   // เติมข้อมูลฟอร์มใหม่ทุกครั้งที่เปิด dialog พร้อมอุปกรณ์ที่เลือก
   useEffect(() => {
     if (isOpen && deviceData) {
@@ -52,6 +57,7 @@ export default function DeviceEditFormDialog({
         name: deviceData.name || '',
         assigned_to: deviceData.assigned_to || '',
         department: deviceData.department || '',
+        installation_location: deviceData.installation_location || '', // ⬅️ ช่องข้อความธรรมดา ให้ตรงกับฟอร์มเพิ่ม/แก้ไขอุปกรณ์
         category: deviceData.category || '',
         status: deviceData.status || '',
         purchase_date: deviceData.purchase_date || '',
@@ -106,17 +112,26 @@ export default function DeviceEditFormDialog({
         throw new Error('ไม่พบรหัสอุปกรณ์ที่ต้องการเคลื่อนย้าย กรุณาปิดหน้าต่างนี้แล้วเปิดใหม่อีกครั้ง');
       }
 
-      const { error: approvalError } = await supabase.from('approvals').insert([{
-        device_id: form.device_id,
-        request_type: 'move',
-        status: 'Pending',
-        user_id: user.id,
-        description: `ขอเคลื่อนย้ายอุปกรณ์ ${deviceData?.asset_tag || ''} ไปแผนก ${form.department}`,
-        changed_fields: {
-          department: form.department.trim(),
-          assigned_to: form.assigned_to.trim(),
-        },
-      }]);
+      const locationTrimmed = (form.installation_location || '').trim();
+
+      // ✅ ใช้ .select() เพื่อดึง id ของคำขอที่เพิ่ง insert กลับมา ใช้เป็น "เลขที่คำขอ" บนฟอร์มปริ้น
+      const { data: approvalData, error: approvalError } = await supabase
+        .from('approvals')
+        .insert([{
+          device_id: form.device_id,
+          request_type: 'move',
+          status: 'Pending',
+          user_id: user.id,
+          description: `ขอเคลื่อนย้ายอุปกรณ์ ${deviceData?.asset_tag || ''} ไปแผนก ${form.department}${locationTrimmed ? ` (สถานที่ติดตั้ง: ${locationTrimmed})` : ''
+            }`,
+          changed_fields: {
+            department: form.department.trim(),
+            assigned_to: form.assigned_to.trim(),
+            installation_location: locationTrimmed, // ⬅️ ให้ตรงกับชื่อคอลัมน์/field ในฟอร์มเพิ่ม-แก้ไขอุปกรณ์
+          },
+        }])
+        .select()
+        .single();
       if (approvalError) throw approvalError;
 
       const { data: updateData, error: statusError } = await supabase
@@ -135,11 +150,29 @@ export default function DeviceEditFormDialog({
         assetTag: deviceData?.asset_tag,
         deviceName: deviceData?.name,
         action: 'move_request',
-        description: `ขอย้ายไปแผนก ${form.department}, ผู้รับมอบหมายใหม่: ${form.assigned_to}`,
+        description: `ขอย้ายไปแผนก ${form.department}${locationTrimmed ? `, สถานที่ติดตั้ง: ${locationTrimmed}` : ''
+          }, ผู้รับมอบหมายใหม่: ${form.assigned_to}`,
         performedBy: user.email,
       });
 
+      // ✅ เตรียมข้อมูลสำหรับฟอร์มปริ้น แล้วปิด dialog แก้ไข เปิด dialog ปริ้นแทน
+      setPrintData({
+        requestNo: approvalData?.id ? String(approvalData.id).slice(0, 8) : '-',
+        requestDate: new Date().toLocaleDateString('th-TH', {
+          day: '2-digit', month: 'long', year: 'numeric',
+        }),
+        requestedBy: user.email,
+        deviceName: deviceData?.name,
+        assetTag: deviceData?.asset_tag,
+        category: deviceData?.category,
+        fromDepartment: deviceData?.department,
+        toDepartment: form.department,
+        installationLocation: locationTrimmed,
+        assignedTo: form.assigned_to,
+      });
+
       setIsOpen(false);
+      setShowPrintPreview(true);
       if (fetchDevices) fetchDevices();
     } catch (err) {
       alert('ส่งคำขอไม่สำเร็จ: ' + err.message);
@@ -153,6 +186,7 @@ export default function DeviceEditFormDialog({
     const localErrors = {};
     const departmentTrimmed = (form.department || '').trim();
     const assignedToTrimmed = (form.assigned_to || '').trim();
+    const locationTrimmed = (form.installation_location || '').trim();
 
     if (!departmentTrimmed) {
       localErrors.department = 'กรุณาเลือกแผนกปลายทาง';
@@ -170,13 +204,19 @@ export default function DeviceEditFormDialog({
 
     const sameDepartment = departmentTrimmed === (deviceData?.department || '').trim();
     const sameAssignedTo = assignedToTrimmed === (deviceData?.assigned_to || '').trim();
+    const sameLocation = locationTrimmed === (deviceData?.installation_location || '').trim();
 
-    if (sameDepartment && sameAssignedTo) {
-      setErrors({ department: 'ไม่มีข้อมูลเปลี่ยนแปลง กรุณาเลือกแผนกหรือผู้รับมอบหมายใหม่' });
+    if (sameDepartment && sameAssignedTo && sameLocation) {
+      setErrors({ department: 'ไม่มีข้อมูลเปลี่ยนแปลง กรุณาเลือกแผนก, สถานที่ติดตั้ง หรือผู้รับมอบหมายใหม่' });
       return;
     }
 
-    setForm((f) => ({ ...f, department: departmentTrimmed, assigned_to: assignedToTrimmed }));
+    setForm((f) => ({
+      ...f,
+      department: departmentTrimmed,
+      assigned_to: assignedToTrimmed,
+      installation_location: locationTrimmed,
+    }));
     handleRequestMove();
   };
 
@@ -190,7 +230,8 @@ export default function DeviceEditFormDialog({
 
     const isChanged =
       (form.department || '').trim() !== (deviceData.department || '').trim() ||
-      (form.assigned_to || '').trim() !== (deviceData.assigned_to || '').trim();
+      (form.assigned_to || '').trim() !== (deviceData.assigned_to || '').trim() ||
+      (form.installation_location || '').trim() !== (deviceData.installation_location || '').trim();
 
     if (isChanged) {
       setCloseConfirmOpen(true);
@@ -201,151 +242,146 @@ export default function DeviceEditFormDialog({
 
   // ── Render ────────────────────────────────────────────────────────
   return (
-    <Dialog
-      open={isOpen}
-      onOpenChange={(open) => {
-        if (!open) {
-          setErrors({});
-          setCloseConfirmOpen(true);
-        }
-      }}
-    >
-      {/* w-[92vw] กันล้นขอบจอมือถือ, max-w-md พอดีบนแท็บเล็ต/จอใหญ่ (24"/27" ก็ไม่ยืดเกินความจำเป็นเพราะ dialog นี้เนื้อหาไม่เยอะ) */}
-      {/* max-h-[90vh] + overflow-y-auto กันเนื้อหาล้นจอ ในกรณีจอมือถือแนวนอนหรือคีย์บอร์ดดันพื้นที่ */}
-      <DialogContent
-        className="w-[92vw] max-w-md max-h-[90vh] overflow-y-auto sm:rounded-2xl"
-        style={{
-          backgroundColor: '#ffffff',
-          opacity: 1,
-          backdropFilter: 'none',
-          boxShadow: '0 25px 50px -12px rgb(0 0 0 / 0.25)',
+    <>
+      <Dialog
+        open={isOpen}
+        onOpenChange={(open) => {
+          if (!open) {
+            setErrors({});
+            setCloseConfirmOpen(true);
+          }
         }}
       >
-        <DialogHeader className="border-b pb-3 shrink-0">
-          <DialogTitle className="flex items-center gap-2 text-base font-bold tracking-tight text-foreground">
-            <div className="p-1 bg-primary/10 rounded-lg text-primary border shadow-sm">
-              <ArrowRightLeft size={15} />
-            </div>
-            <span>เคลื่อนย้ายอุปกรณ์</span>
-          </DialogTitle>
-        </DialogHeader>
+        {/* w-[92vw] กันล้นขอบจอมือถือ, max-w-md พอดีบนแท็บเล็ต/จอใหญ่ (24"/27" ก็ไม่ยืดเกินความจำเป็นเพราะ dialog นี้เนื้อหาไม่เยอะ) */}
+        {/* max-h-[90vh] + overflow-y-auto กันเนื้อหาล้นจอ ในกรณีจอมือถือแนวนอนหรือคีย์บอร์ดดันพื้นที่ */}
+        <DialogContent
+          className="w-[92vw] max-w-md max-h-[90vh] overflow-y-auto sm:rounded-2xl"
+          style={{
+            backgroundColor: '#ffffff',
+            opacity: 1,
+            backdropFilter: 'none',
+            boxShadow: '0 25px 50px -12px rgb(0 0 0 / 0.25)',
+          }}
+        >
+          <DialogHeader className="border-b pb-3 shrink-0">
+            <DialogTitle className="flex items-center gap-2 text-base font-bold tracking-tight text-foreground">
+              <div className="p-1 bg-primary/10 rounded-lg text-primary border shadow-sm">
+                <ArrowRightLeft size={15} />
+              </div>
+              <span>เคลื่อนย้ายอุปกรณ์</span>
+            </DialogTitle>
+          </DialogHeader>
 
-        <div className="flex-1 my-3 space-y-4 w-full">
-          <div className="bg-background rounded-xl border p-4 shadow-sm w-full space-y-3">
+          <div className="flex-1 my-3 space-y-4 w-full">
+            <div className="bg-background rounded-xl border p-4 shadow-sm w-full space-y-3">
 
-            {/* ข้อมูลอุปกรณ์ที่กำลังจะย้าย */}
-            <div className="bg-muted/30 rounded-lg px-3 py-2 text-xs text-muted-foreground">
-              <span className="font-semibold text-foreground">{deviceData?.name}</span>
-              {deviceData?.asset_tag && <span className="ml-1 font-mono">({deviceData.asset_tag})</span>}
-            </div>
-
-            {/* แผนกปลายทาง — combobox ค้นหาได้ */}
-            <div className="w-full relative" ref={departmentRef}>
-              <Label className={`text-[11px] font-bold ${errors.department ? 'text-red-500' : 'text-foreground/80'}`}>
-                แผนกปลายทาง
-              </Label>
-              <div className="relative mt-1">
-                {/*
-                  🐛 แก้บั๊ก: เดิมใช้ <input> ดิบที่ไม่ได้กำหนดสีตัวอักษร/พื้นหลังชัดเจน
-                  ทำให้บางเครื่อง/ธีมตัวอักษรกลายเป็นสีเดียวกับพื้นหลัง (มองไม่เห็นตัวอักษร เห็นแต่เคอร์เซอร์กะพริบ)
-                  แก้โดยใช้ <Input> ของระบบ (มี text-foreground/bg-background ที่ถูกต้องอยู่แล้ว)
-                  พร้อมล็อกสีตัวอักษร/พื้นหลังไว้อีกชั้นให้ชัวร์
-                */}
-                <Input
-                  value={departmentSearch}
-                  onChange={(e) => {
-                    setDepartmentSearch(e.target.value);
-                    setDepartmentDropdownOpen(true);
-                    if (form.department) {
-                      setForm((f) => ({ ...f, department: '' }));
-                    }
-                  }}
-                  onClick={() => setDepartmentDropdownOpen(true)}
-                  placeholder={errors.department ? errors.department : 'ค้นหาแผนกที่จะย้ายไป'}
-                  disabled={saving}
-                  className={`h-9 w-full pr-7 text-xs bg-white text-foreground placeholder:text-muted-foreground transition-colors focus:outline-none focus:ring-1 ${
-                    errors.department
-                      ? 'border-red-500 bg-red-50/20 placeholder:text-red-400 focus:ring-red-500'
-                      : 'border-input focus:ring-primary'
-                  }`}
-                />
-                <ChevronDown size={13} className="absolute right-2.5 top-1/2 -translate-y-1/2 text-muted-foreground pointer-events-none" />
+              {/* ข้อมูลอุปกรณ์ที่กำลังจะย้าย */}
+              <div className="bg-muted/30 rounded-lg px-3 py-2 text-xs text-muted-foreground">
+                <span className="font-semibold text-foreground">{deviceData?.name}</span>
+                {deviceData?.asset_tag && <span className="ml-1 font-mono">({deviceData.asset_tag})</span>}
               </div>
 
-              {departmentDropdownOpen && (
-                <div className="absolute z-50 mt-1 w-full bg-white border rounded-md shadow-lg max-h-48 overflow-y-auto">
-                  {filteredDepartments.length === 0 ? (
-                    <div className="px-3 py-2 text-xs text-muted-foreground text-center">ไม่พบแผนกที่ตรงกับคำค้นหา</div>
-                  ) : (
-                    filteredDepartments.map((dep) => (
-                      <div
-                        key={dep}
-                        onClick={() => handleSelectDepartment(dep)}
-                        className={`px-3 py-2 text-xs cursor-pointer hover:bg-muted/60 transition-colors ${
-                          form.department === dep ? 'bg-primary/10 font-semibold' : ''
-                        }`}
-                      >
-                        {dep}
-                      </div>
-                    ))
-                  )}
-                </div>
-              )}
+              {/* แผนกปลายทาง — dropdown ธรรมดา */}
+              <div className="w-full">
+                <Label className={`text-[11px] font-bold ${errors.department ? 'text-red-500' : 'text-foreground/80'}`}>
+                  แผนกปลายทาง
+                </Label>
+                <select
+                  value={form.department || ''}
+                  onChange={(e) => {
+                    setForm((f) => ({ ...f, department: e.target.value }));
+                    setErrors((prev) => ({ ...prev, department: '' }));
+                  }}
+                  disabled={saving}
+                  className={`mt-1 h-9 w-full text-xs leading-none appearance-none font-normal rounded-md border px-2 bg-white text-foreground transition-colors focus:outline-none focus:ring-1 ${errors.department
+                    ? 'border-red-500 bg-red-50/20 text-red-500 focus:ring-red-500'
+                    : 'border-input focus:ring-primary'
+                    }`}
+                >
+                  <option value="" disabled>
+                    {errors.department ? errors.department : 'เลือกแผนกปลายทาง'}
+                  </option>
+                  {departments.map((dep) => (
+                    <option key={dep} value={dep}>
+                      {dep}
+                    </option>
+                  ))}
+                </select>
+                <FieldError message={errors.department} />
+              </div>
 
-              <FieldError message={errors.department} />
-            </div>
+              {/* สถานที่ติดตั้ง — ช่องข้อความธรรมดา ให้เหมือนกับฟอร์มเพิ่ม/แก้ไขอุปกรณ์ */}
+              <div className="w-full">
+                <Label className="text-[11px] font-bold text-foreground/80">
+                  สถานที่ติดตั้ง
+                </Label>
+                <Input
+                  value={form.installation_location || ''}
+                  placeholder="เช่น ชั้น 3 ห้อง IT"
+                  className="mt-1 h-9 w-full text-xs leading-none appearance-none font-normal rounded-md border px-2 bg-white text-foreground transition-colors focus:outline-none focus:ring-1 border-input focus:ring-primary"
+                  onChange={(e) => setForm((f) => ({ ...f, installation_location: e.target.value }))}
+                  disabled={saving}
+                />
+              </div>
 
-            {/* ผู้รับมอบหมายใหม่ */}
-            <div className="w-full">
-              <Label className={`text-[11px] font-bold ${errors.assigned_to ? 'text-red-500' : 'text-foreground/80'}`}>
-                ผู้รับมอบหมายใหม่
-              </Label>
-              <Input
-                value={form.assigned_to || ''}
-                placeholder="เช่น น.ส. ปัญญา ใจดี"
-                className={`mt-1 h-9 w-full text-xs bg-white text-foreground transition-colors focus:outline-none focus:ring-1 ${
-                  errors.assigned_to
+              {/* ผู้รับมอบหมายใหม่ */}
+              <div className="w-full">
+                <Label className={`text-[11px] font-bold ${errors.assigned_to ? 'text-red-500' : 'text-foreground/80'}`}>
+                  ผู้รับมอบหมายใหม่
+                </Label>
+                <Input
+                  value={form.assigned_to || ''}
+                  placeholder="เช่น น.ส. ปัญญา ใจดี"
+                  className={`mt-1 h-9 w-full text-xs bg-white text-foreground transition-colors focus:outline-none focus:ring-1 ${errors.assigned_to
                     ? 'border-red-500 bg-red-50/20 placeholder:text-red-400 focus:ring-red-500'
                     : 'border-input focus:ring-primary'
-                }`}
-                onFocus={() => setErrors((prev) => ({ ...prev, assigned_to: '' }))}
-                onChange={(e) => setForm((f) => ({ ...f, assigned_to: e.target.value }))}
-                disabled={saving}
-              />
-              <FieldError message={errors.assigned_to} />
-            </div>
-
-          </div>
-        </div>
-
-        {/* ปุ่มด้านล่าง: เต็มความกว้างเรียงแนวตั้งบนมือถือ ชิดขวาแนวนอนบนจอกว้างขึ้น */}
-        <div className="flex flex-col-reverse sm:flex-row justify-end items-stretch sm:items-center gap-2 border-t pt-3 shrink-0">
-          <Button
-            className="hover:bg-[#111827] hover:text-white"
-            variant="outline"
-            onClick={handleCancel}
-            disabled={saving}
-          >
-            ยกเลิก
-          </Button>
-
-          <Button
-            className="hover:bg-[#111827] hover:text-white"
-            variant="outline"
-            onClick={validateAndSave}
-            disabled={saving}
-          >
-            {saving ? (
-              <div className="flex items-center justify-center gap-1.5">
-                <div className="animate-spin rounded-full h-3 w-3 border-b-2 border-current" />
-                <span>กำลังส่งคำขอ...</span>
+                    }`}
+                  onFocus={() => setErrors((prev) => ({ ...prev, assigned_to: '' }))}
+                  onChange={(e) => setForm((f) => ({ ...f, assigned_to: e.target.value }))}
+                  disabled={saving}
+                />
+                <FieldError message={errors.assigned_to} />
               </div>
-            ) : (
-              'ส่งขออนุมัติเคลื่อนย้าย'
-            )}
-          </Button>
-        </div>
-      </DialogContent>
-    </Dialog>
+
+            </div>
+          </div>
+
+          {/* ปุ่มด้านล่าง: เต็มความกว้างเรียงแนวตั้งบนมือถือ ชิดขวาแนวนอนบนจอกว้างขึ้น */}
+          <div className="flex flex-col-reverse sm:flex-row justify-end items-stretch sm:items-center gap-2 border-t pt-3 shrink-0">
+            <Button
+              className="hover:bg-[#111827] hover:text-white"
+              variant="outline"
+              onClick={handleCancel}
+              disabled={saving}
+            >
+              ยกเลิก
+            </Button>
+
+            <Button
+              className="hover:bg-[#111827] hover:text-white"
+              variant="outline"
+              onClick={validateAndSave}
+              disabled={saving}
+            >
+              {saving ? (
+                <div className="flex items-center justify-center gap-1.5">
+                  <div className="animate-spin rounded-full h-3 w-3 border-b-2 border-current" />
+                  <span>กำลังส่งคำขอ...</span>
+                </div>
+              ) : (
+                'ส่งขออนุมัติเคลื่อนย้าย'
+              )}
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* ✅ Dialog ฟอร์มปริ้นขอย้ายอุปกรณ์ — เปิดขึ้นหลังส่งคำขอสำเร็จ พร้อม auto print */}
+      <PrintMoveFormDialog
+        open={showPrintPreview}
+        onClose={() => setShowPrintPreview(false)}
+        data={printData}
+      />
+    </>
   );
 }

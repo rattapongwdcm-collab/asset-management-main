@@ -1,14 +1,15 @@
 import { useState, useEffect } from 'react';
 import { Outlet, Link, useLocation } from 'react-router-dom';
 import { supabase } from '@/lib/supabase';
-import { LayoutDashboard, Monitor, Wrench, PackageOpen, LogOut, Server, ClipboardCheck, History, Menu, X, ShieldCheck,Pencil  } from 'lucide-react';
+import { LayoutDashboard, Monitor, Wrench, PackageOpen, LogOut, Server, ClipboardCheck, History, Menu, X, ShieldCheck, Pencil } from 'lucide-react';
 import SessionGuard from './SessionGuard';   // ✅ เพิ่ม import
 
 const baseNavItems = [
-  { label: 'Dashboard', path: '/', icon: LayoutDashboard },
-  { label: 'Device', path: '/device', icon: Monitor },
-  { label: 'Repair', path: '/repair', icon: Wrench },
-  // { label: 'Rent', path: '/rent', icon: PackageOpen },
+  { label: 'แดชบอร์ด', path: '/', icon: LayoutDashboard },
+  { label: 'อุปกรณ์', path: '/device', icon: Monitor },
+  { label: 'อุปกรณ์เสริม', path: '/accessories', icon: PackageOpen },
+  { label: 'ซ่อมบำรุง', path: '/repair', icon: Wrench },
+  // { label: 'เช่า', path: '/rent', icon: PackageOpen },
 ];
 
 export default function Layout() {
@@ -32,10 +33,10 @@ export default function Layout() {
         setIsAdmin(true);
         setNavItems([
           ...baseNavItems,
-          { label: 'Approve', path: '/approve', icon: ClipboardCheck },
-          { label: 'History', path: '/history', icon: History },
-          { label: 'Account ', path: '/admin/accounts', icon: ShieldCheck },
-          { label: 'Edit', path: '/admin/devices', icon: Pencil } 
+          { label: 'อนุมัติ', path: '/approve', icon: ClipboardCheck },
+          { label: 'ประวัติ', path: '/history', icon: History },
+          { label: 'บัญชีผู้ใช้', path: '/admin/accounts', icon: ShieldCheck },
+          { label: 'แก้ไขอุปกรณ์', path: '/admin/devices', icon: Pencil }
         ]);
       }
     };
@@ -55,7 +56,7 @@ export default function Layout() {
 
   return (
     <div className="flex h-screen w-full overflow-hidden" style={{ background: 'hsl(var(--background))' }}>
-       <SessionGuard />  
+      <SessionGuard />
       {/* ✅ Overlay สีดำจางๆ เมื่อเปิดเมนูบนมือถือ กดเพื่อปิด */}
       {sidebarOpen && (
         <div
@@ -124,7 +125,7 @@ export default function Layout() {
             onMouseLeave={e => { e.currentTarget.style.background = 'transparent'; e.currentTarget.style.color = 'hsl(var(--sidebar-text))'; }}
           >
             <LogOut size={18} />
-            <span>Logout</span>
+            <span>ออกจากระบบ</span>
           </button>
         </div>
       </aside>
