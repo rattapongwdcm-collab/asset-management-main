@@ -7,7 +7,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { logDeviceHistory } from '@/lib/deviceHistory';
-import PrintRepairFormDialog from "@/components/Device/PrintRepairFormDialog";
+import PrintRepairFormDialog from '../components/Device/PrintRepairFormDialog';
 
 const statusColors = {
   'รออนุมัติแจ้งซ่อม': { bg: 'rgba(245,158,11,0.12)', color: '#f59e0b', text: 'รออนุมัติแจ้งซ่อม' },
