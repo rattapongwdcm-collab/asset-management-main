@@ -7,8 +7,8 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { logDeviceHistory } from '@/lib/deviceHistory';
-import PrintRepairFormDialog from '@/components/device/PrintRepairFormDialog';
-// ✅ สีและข้อความแสดงผลของแต่ละสถานะใบซ่อม แยกไว้นอก component กันสร้างซ้ำทุก render
+import PrintRepairFormDialog from "@/components/device/PrintRepairFormDialog";
+
 const statusColors = {
   'รออนุมัติแจ้งซ่อม': { bg: 'rgba(245,158,11,0.12)', color: '#f59e0b', text: 'รออนุมัติแจ้งซ่อม' },
   'กำลังซ่อม': { bg: 'rgba(59,130,246,0.12)', color: '#3b82f6', text: 'กำลังซ่อม' },
