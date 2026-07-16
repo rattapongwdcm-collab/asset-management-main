@@ -9,11 +9,8 @@ export default function GodexPrintButton({ form }) {
     window.print();
   };
 
-  // ✅ สร้างลิงก์ไปหน้า detail ของอุปกรณ์ตัวนี้ (สแกน QR แล้วเปิดหน้านี้ได้เลย)
-  // ปรับ path ให้ตรงกับ route จริงของระบบ ถ้าหน้า detail อยู่คนละ path ให้แก้ตรงนี้จุดเดียว
-  const deviceDetailUrl = form?.id
-    ? `${window.location.origin}/device?id=${form.id}`
-    : `${window.location.origin}/device`;
+  // ✅ QR code ให้เปิดหน้า login ของระบบที่เดียว (ไม่พาไปหน้า detail อีกต่อไป)
+  const deviceDetailUrl = `${window.location.origin}/login`;
 
   return (
     <>
@@ -65,9 +62,7 @@ export default function GodexPrintButton({ form }) {
           </div>
 
           <div className="shrink-0 flex items-center justify-center pl-1">
-            {/* ✅ QR Code ตอนนี้เก็บ URL ไปหน้า detail ของอุปกรณ์ — สแกนแล้วเปิดเว็บหน้ารายละเอียดได้เลย
-                (ชื่อผู้รับผิดชอบจะไปแสดงในหน้า detail ที่ลิงก์นี้พาไปถึง ไม่ใช่ในตัว QR โดยตรง
-                เพราะ QR ที่เก็บ URL จะเปิดเว็บทันทีตอนสแกน ไม่ใช่โชว์ข้อความดิบๆ) */}
+            {/* ✅ QR Code ตอนนี้เก็บ URL ไปหน้า login เฉยๆ */}
             <QRCodeSVG
               value={deviceDetailUrl}
               size={85}
