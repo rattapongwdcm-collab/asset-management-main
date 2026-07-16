@@ -11,6 +11,8 @@ import { Plus, Search, Filter } from "lucide-react";
 import DeviceEditDialog from '@/components/Device/DeviceEditDialog';
 import { logDeviceHistory } from '@/lib/deviceHistory';
 import { Monitor } from 'lucide-react'
+import { useSearchParams } from 'react-router-dom';
+
 const statusColors = {
   'ใช้งาน': { bg: '#E0F2FE', color: '#000000' },
   'สำรอง': { bg: '#DCFCE7', color: '#000000' },
@@ -57,6 +59,9 @@ export default function Device() {
   const [detailItem, setDetailItem] = useState(null);
   const [focusField, setFocusField] = useState("");
 
+  // ✅ อ่าน query param จาก URL (ใช้เปิด dialog รายละเอียดอัตโนมัติตอนสแกน QR)
+  const [searchParams, setSearchParams] = useSearchParams();
+
   // ✅ state ชุดใหม่ แยกเฉพาะฟอร์มเคลื่อนย้าย (ไม่แชร์กับฟอร์มเพิ่ม/แก้ไขอุปกรณ์อีกต่อไป)
   const [moveForm, setMoveForm] = useState(emptyMoveForm);
   const [moveErrors, setMoveErrors] = useState({});
@@ -86,6 +91,19 @@ export default function Device() {
       supabase.removeChannel(channel);
     };
   }, []);
+
+  // ✅ ถ้า URL มี ?id= (มาจากการสแกน QR code บนสติกเกอร์) ให้เปิด dialog รายละเอียดของอุปกรณ์นั้นอัตโนมัติ
+  // ต้องรอ devices โหลดเสร็จก่อน ไม่งั้นจะหาไม่เจอ
+  useEffect(() => {
+    const idFromUrl = searchParams.get('id');
+    if (idFromUrl && devices.length > 0) {
+      const found = devices.find(d => String(d.id) === String(idFromUrl));
+      if (found) {
+        setDetailItem(found);
+      }
+    }
+  }, [searchParams, devices]);
+
 const [filterCategory, setFilterCategory] = useState('all');
 
   const filtered = devices.filter((d) => {
@@ -290,7 +308,16 @@ const [filterCategory, setFilterCategory] = useState('all');
 
       <DeviceDetailDialog
         isOpen={!!detailItem}
-        setIsOpen={(open) => !open && setDetailItem(null)}
+        setIsOpen={(open) => {
+          if (!open) {
+            setDetailItem(null);
+            // ✅ เคลียร์ ?id= ออกจาก URL ตอนปิด dialog ไม่งั้น refresh หน้าจะเด้ง dialog เดิมขึ้นมาอีก
+            if (searchParams.get('id')) {
+              searchParams.delete('id');
+              setSearchParams(searchParams, { replace: true });
+            }
+          }
+        }}
         detailItem={detailItem}
       />
     </div>

@@ -12,7 +12,7 @@ export default function GodexPrintButton({ form }) {
   // ✅ สร้างลิงก์ไปหน้า detail ของอุปกรณ์ตัวนี้ (สแกน QR แล้วเปิดหน้านี้ได้เลย)
   // ปรับ path ให้ตรงกับ route จริงของระบบ ถ้าหน้า detail อยู่คนละ path ให้แก้ตรงนี้จุดเดียว
   const deviceDetailUrl = form?.id
-    ? `${window.location.origin}/device/detail/${form.id}`
+    ? `${window.location.origin}/device?id=${form.id}`
     : `${window.location.origin}/device`;
 
   return (
