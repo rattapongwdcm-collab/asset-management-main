@@ -7,7 +7,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { logDeviceHistory } from '@/lib/deviceHistory';
-
+import PrintRepairFormDialog from '@/components/device/PrintRepairFormDialog';
 // ✅ สีและข้อความแสดงผลของแต่ละสถานะใบซ่อม แยกไว้นอก component กันสร้างซ้ำทุก render
 const statusColors = {
   'รออนุมัติแจ้งซ่อม': { bg: 'rgba(245,158,11,0.12)', color: '#f59e0b', text: 'รออนุมัติแจ้งซ่อม' },
@@ -17,7 +17,6 @@ const statusColors = {
 };
 
 // ✅ ฟอร์มว่างเปล่าเริ่มต้น แยกออกมาเป็นค่าคงที่ ใช้ได้ทั้งตอน init state และตอนรีเซ็ตฟอร์ม
-// (แก้บั๊กเดิม: ตอนรีเซ็ตฟอร์มใน useEffect ลืมเคลียร์ asset_tag ทำให้ค่าเก่าอาจค้างข้ามรอบเปิด modal)
 const emptyRepairForm = {
   device_id: '',
   device_name: '',
@@ -25,6 +24,14 @@ const emptyRepairForm = {
   reported_by: '',
   issue_description: '',
 };
+
+/**
+ * สร้างเลขที่เอกสารเป็นเลขรันนิ่งล้วน (5 หลัก) เช่น "00001", "00002"
+ * ใช้แพทเทิร์นเดียวกับ generateRequestNo ในหน้าเคลื่อนย้าย (DeviceEditFormDialog.jsx)
+ */
+function generateRequestNo(sequence) {
+  return String(sequence).padStart(5, '0');
+}
 
 export default function Repair() {
   const [repairs, setRepairs] = useState([]);
@@ -41,6 +48,10 @@ export default function Repair() {
 
   const [form, setForm] = useState(emptyRepairForm);
   const [error, setError] = useState('');
+
+  // ✅ state สำหรับ dialog ฟอร์มปริ้นใบแจ้งซ่อม (แสดงหลังส่งคำขอสำเร็จ)
+  const [showPrintPreview, setShowPrintPreview] = useState(false);
+  const [printData, setPrintData] = useState(null);
 
   // โหลดข้อมูลใบซ่อม + อุปกรณ์ทั้งหมดพร้อมกัน
   const loadData = async () => {
@@ -171,7 +182,29 @@ export default function Repair() {
         performedBy: form.reported_by.trim(),
       });
 
+      // นับจำนวนคำขอแจ้งซ่อมทั้งหมดที่เคยเกิดขึ้น (รวมคำขอนี้ที่เพิ่ง insert ไปด้วย) ใช้เป็นเลขที่เอกสารแบบรันนิ่ง
+      const { count: totalCount, error: countError } = await supabase
+        .from('approvals')
+        .select('id', { count: 'exact', head: true })
+        .eq('request_type', 'repair');
+      if (countError) throw countError;
+
+      const sequence = totalCount || 1;
+      const now = new Date();
+
+      // เตรียมข้อมูลสำหรับฟอร์มปริ้น แล้วปิด modal กรอกข้อมูล เปิด dialog ปริ้นแทน
+      setPrintData({
+        requestNo: generateRequestNo(sequence),
+        requestDate: now.toLocaleDateString('th-TH', { day: '2-digit', month: 'long', year: 'numeric' }),
+        requestTime: now.toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit' }),
+        deviceName: selectedDevice.name,
+        assetTag: selectedDevice.asset_tag,
+        reportedBy: form.reported_by.trim(),
+        issueDescription: form.issue_description.trim(),
+      });
+
       setIsModalOpen(false);
+      setShowPrintPreview(true);
       loadData();
     } catch (err) {
       console.error("รายละเอียด Error:", err);
@@ -483,6 +516,13 @@ export default function Repair() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {/* Dialog ฟอร์มปริ้นใบแจ้งซ่อม — เปิดขึ้นหลังส่งคำขอสำเร็จ พร้อม auto สร้าง/เปิด PDF */}
+      <PrintRepairFormDialog
+        open={showPrintPreview}
+        onClose={() => setShowPrintPreview(false)}
+        data={printData}
+      />
     </div>
   );
 }

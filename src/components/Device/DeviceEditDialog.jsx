@@ -6,7 +6,7 @@ import { Label } from '@/components/ui/label';
 import { supabase } from '@/lib/supabase';
 import { ArrowRightLeft, AlertCircle } from 'lucide-react';
 import { logDeviceHistory } from '@/lib/deviceHistory';
-import PrintMoveFormDialog from './PrintMoveFormDialog'; // ⬅️ dialog ฟอร์มปริ้นขอย้ายอุปกรณ์
+import  PrintMoveFormDialog from  './PrintMoveFormDialog'
 
 // ── Helper Components ───────────────────────────────────────────────────
 
@@ -22,6 +22,14 @@ function FieldError({ message }) {
       )}
     </div>
   );
+}
+
+/**
+ * สร้างเลขที่เอกสารเป็นเลขรันนิ่งล้วน (5 หลัก) เช่น "00001", "00002"
+ * sequence มาจากการนับจำนวนคำขอเคลื่อนย้าย (request_type='move') ทั้งหมดที่เคยเกิดขึ้น (รวมคำขอปัจจุบันด้วย)
+ */
+function generateRequestNo(sequence) {
+  return String(sequence).padStart(5, '0');
 }
 
 // ── Main Component ───────────────────────────────────────────────────────
@@ -44,7 +52,7 @@ export default function DeviceEditFormDialog({
   const [departmentDropdownOpen, setDepartmentDropdownOpen] = useState(false);
   const departmentRef = useRef(null);
 
-  // ✅ state สำหรับ dialog ฟอร์มปริ้นขอย้ายอุปกรณ์ (แสดงหลังส่งคำขอสำเร็จ)
+  // state สำหรับ dialog ฟอร์มปริ้นขอย้ายอุปกรณ์ (แสดงหลังส่งคำขอสำเร็จ)
   const [showPrintPreview, setShowPrintPreview] = useState(false);
   const [printData, setPrintData] = useState(null);
 
@@ -114,11 +122,12 @@ export default function DeviceEditFormDialog({
 
       const locationTrimmed = (form.installation_location || '').trim();
 
-      // ✅ ใช้ .select() เพื่อดึง id ของคำขอที่เพิ่ง insert กลับมา ใช้เป็น "เลขที่คำขอ" บนฟอร์มปริ้น
+      // ใช้ .select() เพื่อดึงข้อมูลคำขอที่เพิ่ง insert กลับมา (รวม created_at) ใช้สร้าง "เลขที่คำขอ" บนฟอร์มปริ้น
       const { data: approvalData, error: approvalError } = await supabase
         .from('approvals')
         .insert([{
           device_id: form.device_id,
+          device_name: deviceData?.name || null, // ✅ เพิ่มไว้ตรงนี้ — Approve.jsx ใช้ค่านี้ fallback ตอน join กับ devices ไม่ได้ (RLS/ถูกลบ/ฯลฯ)
           request_type: 'move',
           status: 'Pending',
           user_id: user.id,
@@ -155,9 +164,19 @@ export default function DeviceEditFormDialog({
         performedBy: user.email,
       });
 
-      // ✅ เตรียมข้อมูลสำหรับฟอร์มปริ้น แล้วปิด dialog แก้ไข เปิด dialog ปริ้นแทน
+      // นับจำนวนคำขอเคลื่อนย้ายทั้งหมดที่เคยเกิดขึ้น (รวมคำขอนี้ที่เพิ่ง insert ไปด้วย) ใช้เป็นเลขที่เอกสารแบบรันนิ่ง
+      const { count: totalCount, error: countError } = await supabase
+        .from('approvals')
+        .select('id', { count: 'exact', head: true })
+        .eq('request_type', 'move');
+      if (countError) throw countError;
+
+      const sequence = totalCount || 1; // นับรวมคำขอปัจจุบันแล้ว (insert ไปก่อนหน้านี้)
+
+      // เตรียมข้อมูลสำหรับฟอร์มปริ้น แล้วปิด dialog แก้ไข เปิด dialog ปริ้นแทน
       setPrintData({
-        requestNo: approvalData?.id ? String(approvalData.id).slice(0, 8) : '-',
+        // เลขที่เอกสารเป็นเลขรันนิ่งล้วน เช่น 00001
+        requestNo: generateRequestNo(sequence),
         requestDate: new Date().toLocaleDateString('th-TH', {
           day: '2-digit', month: 'long', year: 'numeric',
         }),
@@ -376,7 +395,7 @@ export default function DeviceEditFormDialog({
         </DialogContent>
       </Dialog>
 
-      {/* ✅ Dialog ฟอร์มปริ้นขอย้ายอุปกรณ์ — เปิดขึ้นหลังส่งคำขอสำเร็จ พร้อม auto print */}
+      {/* Dialog ฟอร์มปริ้นขอย้ายอุปกรณ์ — เปิดขึ้นหลังส่งคำขอสำเร็จ พร้อม auto print */}
       <PrintMoveFormDialog
         open={showPrintPreview}
         onClose={() => setShowPrintPreview(false)}

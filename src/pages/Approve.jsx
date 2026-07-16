@@ -12,15 +12,15 @@ const rejectActionMap = {
   delete: 'delete_rejected',
   delete_accessory: 'delete_accessory_rejected',
 };
-
+const computeStatus = (qty) => (Number(qty) > 0 ? 'สำรอง' : 'หมด');
 export default function Approve() {
   const [approvals, setApprovals] = useState([]);
   const [loading, setLoading] = useState(true);
   const [submittingId, setSubmittingId] = useState(null);
-  // ⚠️ userRole: ยังไม่มีจุดไหนในไฟล์นี้เรียก setUserRole หรือใช้ค่านี้จริง
-  // เก็บไว้ตามเดิมเผื่อมีโค้ดส่วนอื่นพึ่งพาอยู่ — ถ้ายืนยันว่าไม่ใช้ ให้ลบ state นี้ทิ้งได้เลย
+
   const [userRole, setUserRole] = useState(null);
   const [confirmAction, setConfirmAction] = useState({ open: false, item: null, type: '' });
+  const [errorDialog, setErrorDialog] = useState({ open: false, message: '' });
 
   // โหลดรายการคำขออนุมัติที่ยัง Pending อยู่ พร้อมข้อมูลผู้ขอ, อุปกรณ์ (devices) และอุปกรณ์เสริม (accessories) ที่เกี่ยวข้อง
   const loadData = async () => {
@@ -28,10 +28,9 @@ export default function Approve() {
 
     const { data, error } = await supabase
       .from('approvals')
-      .select('*, profiles (email), devices (name, asset_tag), accessories (name)')
-      .eq('status', 'Pending') // กรองเอาเฉพาะงานที่ยังรออนุมัติ
+      .select('*, profiles (email, full_name), accessories (name, brand, department, status, price, unit, quantity)')
+      .eq('status', 'Pending')
       .order('created_at', { ascending: false });
-
     if (error) {
       console.error("Error loading data:", error);
     } else {
@@ -167,12 +166,33 @@ export default function Approve() {
           setConfirmAction({ open: false, item: null, type: '' });
           return;
         }
+        // ---------- อนุมัติแก้ไขสต็อคอุปกรณ์เสริม (คำนวณจากจำนวนคงเหลือจริง ณ ขณะนี้ + delta) ----------
+        else if (requestType === 'edit_accessory') {
+          // ดึงจำนวนคงเหลือ "ปัจจุบัน" มาคำนวณสด ไม่ใช้ค่าที่คำนวณไว้ล่วงหน้าตอนส่งคำขอ
+          // เพราะระหว่างนี้อาจมีคำขออื่นถูกอนุมัติไปก่อนแล้ว ทำให้ตัวเลขฐานเปลี่ยนไป
+          const { data: currentAccessory, error: fetchError } = await supabase
+            .from('accessories')
+            .select('quantity')
+            .eq('id', item.accessory_id)
+            .single();
+          if (fetchError) throw fetchError;
 
-        else {
-          throw new Error(`ไม่รู้จัก request_type: "${item.request_type}"`);
+          const delta = item.changed_fields?.quantity_delta ?? 0;
+          const newQuantity = (currentAccessory?.quantity ?? 0) + delta;
+
+          if (newQuantity < 0) {
+            throw new Error(
+              `กรุณาตรวจสอบสต๊อก (คงเหลือปัจจุบัน ${currentAccessory?.quantity}, คำขอ ${delta > 0 ? '+' : ''}${delta}) ปฏิเสธคำขอนี้แทน`
+            );
+          }
+
+          const { error: accessoryError } = await supabase
+            .from('accessories')
+            .update({ quantity: newQuantity, status: computeStatus(newQuantity) })
+            .eq('id', item.accessory_id);
+          if (accessoryError) throw accessoryError;
         }
       }
-
       // ---------- ปฏิเสธคำขอ (ทุกชนิด) ----------
       else if (type === 'reject') {
         if (requestType === 'repair' && item.repair_id) {
@@ -184,7 +204,7 @@ export default function Approve() {
         }
 
         // การปฏิเสธคำขอลบอุปกรณ์เสริม ไม่ต้องแตะตาราง devices เลย (accessories ไม่ผูกกับ devices)
-        if (requestType !== 'delete_accessory') {
+        if (!['delete_accessory', 'edit_accessory'].includes(requestType)) {
           const { error: revertError } = await supabase
             .from('devices')
             .update({ status: 'ใช้งาน' })
@@ -211,8 +231,8 @@ export default function Approve() {
       if (closeError) throw closeError;
 
       await loadData();
-    } catch (err) {
-      alert("เกิดข้อผิดพลาด: " + err.message);
+   } catch (err) {
+      setErrorDialog({ open: true, message: err.message });
     } finally {
       setSubmittingId(null);
       setConfirmAction({ open: false, item: null, type: '' });
@@ -277,7 +297,7 @@ export default function Approve() {
 
                 <div className="text-xs space-y-1 text-muted-foreground">
                   <p>วันที่: {new Date(item.created_at).toLocaleString('th-TH')}</p>
-                  <p>ผู้ขอ: {item.profiles?.email || '—'}</p>
+                  <p>ผู้ขอ: {item.profiles?.full_name || item.profiles?.email || '—'}</p>
                 </div>
 
                 <div className="pt-1">
@@ -309,7 +329,7 @@ export default function Approve() {
               approvals.map((item) => (
                 <tr key={item.id} className="border-b">
                   <td className="px-4 py-3">{new Date(item.created_at).toLocaleString('th-TH')}</td>
-                  <td className="px-4 py-3">{item.profiles?.email || '—'}</td>
+                  <td className="px-4 py-3">{item.profiles?.full_name || item.profiles?.email || '—'}</td>
                   <td className="px-4 py-3">{displayCode(item)}</td>
                   <td className="px-4 py-3">{displayName(item)}</td>
                   <td className="px-4 py-3 font-semibold capitalize">{item.request_type}</td>
@@ -347,6 +367,25 @@ export default function Approve() {
                 onClick={handleExecuteAction}
               >
                 ยืนยัน
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Popup แจ้งข้อผิดพลาด (แทน alert เดิม) เช่น กรณีสต็อกไม่พอตอนอนุมัติ edit_accessory */}
+      {errorDialog.open && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 px-4">
+          <div className="bg-white p-6 rounded-lg shadow-2xl max-w-sm w-full border border-gray-200">
+            <h3 className="text-lg font-bold text-red-600">สต็อกไม่พอสำหรับคำขอนี้</h3>
+            <p className="text-sm text-muted-foreground mt-2 mb-6 whitespace-pre-wrap">{errorDialog.message}</p>
+            <div className="flex justify-end">
+              <Button
+                className="text-xs hover:bg-[#111827] hover:text-white"
+                variant="outline"
+                onClick={() => setErrorDialog({ open: false, message: '' })}
+              >
+                ปิด
               </Button>
             </div>
           </div>
