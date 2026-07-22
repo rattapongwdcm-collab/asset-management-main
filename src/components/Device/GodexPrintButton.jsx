@@ -9,8 +9,12 @@ export default function GodexPrintButton({ form }) {
     window.print();
   };
 
-  // ✅ QR code ให้เปิดหน้า login ของระบบที่เดียว (ไม่พาไปหน้า detail อีกต่อไป)
-  const deviceDetailUrl = `${window.location.origin}/login`;
+  // ✅ QR code ชี้ไปหน้า login พร้อมแนบปลายทางจริง (device + id) ผ่าน query param "redirect"
+  // หลัง login สำเร็จ Login.jsx จะอ่านค่านี้แล้วพา user ไปเปิด Dialog ของอุปกรณ์นี้ทันที
+  // ⚠️ ใช้ form.id (id จริงในฐานข้อมูล) ไม่ใช่ form.asset_tag เพราะ Device.jsx เทียบ
+  // String(d.id) === String(idFromUrl) — ถ้า parent ไม่ส่ง id มาด้วย ต้องแก้จุดนั้นก่อน
+  const redirectPath = `/device?id=${encodeURIComponent(form.id || "")}`;
+  const deviceDetailUrl = `${window.location.origin}/login?redirect=${encodeURIComponent(redirectPath)}`;
 
   return (
     <>
@@ -62,7 +66,7 @@ export default function GodexPrintButton({ form }) {
           </div>
 
           <div className="shrink-0 flex items-center justify-center pl-1">
-            {/* ✅ QR Code ตอนนี้เก็บ URL ไปหน้า login เฉยๆ */}
+            {/* ✅ QR Code เก็บ URL ไปหน้า login พร้อม redirect กลับมาเปิด Dialog อุปกรณ์นี้ */}
             <QRCodeSVG
               value={deviceDetailUrl}
               size={85}
@@ -70,13 +74,13 @@ export default function GodexPrintButton({ form }) {
           </div>
         </div>
 
-        {/* ✅ เพิ่ม: แสดงชื่อผู้รับผิดชอบ (ผู้ถือครอง) ไว้ใต้ QR แบบข้อความเล็กๆ บนสติกเกอร์เลย
+        {/* ✅ แสดงชื่อผู้รับผิดชอบ (ผู้ถือครอง) ไว้ใต้ QR แบบข้อความเล็กๆ บนสติกเกอร์เลย
             เผื่อบางกรณีไม่สะดวกสแกน จะได้เห็นชื่อได้ทันทีจากสติกเกอร์ */}
         <p className="text-[9px] font-semibold mt-1 truncate">
           ผู้รับผิดชอบ: {form.assigned_to || "ไม่ระบุ"}
         </p>
 
-        {/* ✅ เพิ่ม: ข้อความเตือนเล็กๆ ด้านล่างสุด แจ้งเรื่องชำรุด + เบอร์ติดต่อ */}
+        {/* ✅ ข้อความเตือนเล็กๆ ด้านล่างสุด แจ้งเรื่องชำรุด + เบอร์ติดต่อ */}
         <p className="text-[8px] text-gray-600 mt-1 border-t border-dashed border-gray-400 pt-1 leading-tight">
           ⚠️ หากบาร์โค้ดชำรุดหรือสูญหาย กรุณาติดต่อ 096-285-5419
         </p>

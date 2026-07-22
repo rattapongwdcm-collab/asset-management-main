@@ -2,17 +2,16 @@ import { useState, useEffect } from 'react';
 import { supabase } from '@/lib/supabase';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import DeviceTable from '@/components/Device/DeviceTable';
 import DeviceFormDialog from '@/components/Device/DeviceFormDialog';
 import CloseConfirmDialog from '@/components/Device/CloseConfirmDialog';
 import DeviceDetailDialog from '@/components/Device/DeviceDetailDialog';
-import { Plus, Search, Filter, Download } from "lucide-react"; // ✅ เพิ่ม Download icon
+import { Plus, Search, Download } from "lucide-react"; // ✅ ตัด Filter icon ออก (ไม่ได้ใช้แล้ว)
 import DeviceEditDialog from '@/components/Device/DeviceEditDialog';
 import { logDeviceHistory } from '@/lib/deviceHistory';
 import { Monitor } from 'lucide-react'
 import { useSearchParams } from 'react-router-dom';
-import * as XLSX from 'xlsx'; // ✅ ต้องติดตั้งไลบรารีนี้ก่อน: npm install xlsx
+import * as XLSX from 'xlsx';
 
 const statusColors = {
   'ใช้งาน': { bg: '#E0F2FE', color: '#000000' },
@@ -42,7 +41,6 @@ const emptyForm = {
   purchase_date: '', purchase_price: '', warranty_expire: '', image_url: '',
 };
 
-// ✅ ฟอร์มว่างเปล่าเฉพาะฟอร์ม "เคลื่อนย้าย" แยกต่างหาก
 const emptyMoveForm = { device_id: '', department: '', assigned_to: '' };
 
 export default function Device() {
@@ -60,10 +58,8 @@ export default function Device() {
   const [detailItem, setDetailItem] = useState(null);
   const [focusField, setFocusField] = useState("");
 
-  // ✅ อ่าน query param จาก URL (ใช้เปิด dialog รายละเอียดอัตโนมัติตอนสแกน QR)
   const [searchParams, setSearchParams] = useSearchParams();
 
-  // ✅ state ชุดใหม่ แยกเฉพาะฟอร์มเคลื่อนย้าย (ไม่แชร์กับฟอร์มเพิ่ม/แก้ไขอุปกรณ์อีกต่อไป)
   const [moveForm, setMoveForm] = useState(emptyMoveForm);
   const [moveErrors, setMoveErrors] = useState({});
   const [moveSaving, setMoveSaving] = useState(false);
@@ -93,8 +89,6 @@ export default function Device() {
     };
   }, []);
 
-  // ✅ ถ้า URL มี ?id= (มาจากการสแกน QR code บนสติกเกอร์) ให้เปิด dialog รายละเอียดของอุปกรณ์นั้นอัตโนมัติ
-  // ต้องรอ devices โหลดเสร็จก่อน ไม่งั้นจะหาไม่เจอ
   useEffect(() => {
     const idFromUrl = searchParams.get('id');
     if (idFromUrl && devices.length > 0) {
@@ -105,32 +99,27 @@ export default function Device() {
     }
   }, [searchParams, devices]);
 
-const [filterCategory, setFilterCategory] = useState('all');
-
-  // ✅ ค้นหาแบบแยกคำ (token-based): ตัดคำค้นหาด้วยช่องว่าง แล้วเช็คว่าทุกคำต้องเจอในข้อมูลรวมของแถวนั้น
-  // เดิมเอาทั้งข้อความที่พิมพ์ (รวมช่องว่างตรงกลาง) ไปเทียบเป็นสตริงเดียว ถ้าช่องว่าง/ลำดับคำในข้อมูลจริงไม่ตรงเป๊ะ จะหลุดผลลัพธ์ไป
+  // ✅ ตัด filterCategory ออกแล้ว — เหลือแค่ค้นหาด้วยข้อความอย่างเดียว
   const filtered = devices.filter((d) => {
     const combined = [d.name, d.asset_tag, d.brand, d.department, d.assigned_to]
       .filter(Boolean)
       .join(' ')
       .toLowerCase()
-      .replace(/\s+/g, ' '); // รวมช่องว่างซ้ำ/หลายแบบให้เหลือช่องว่างเดียว กันปัญหาเว้นวรรคไม่ตรงกัน
+      .replace(/\s+/g, ' ');
 
     const tokens = search.toLowerCase().trim().split(/\s+/).filter(Boolean);
     const matchSearch = tokens.length === 0 || tokens.every((token) => combined.includes(token));
 
-    const matchCategory = filterCategory === "all" || d.category === filterCategory;
-    return matchSearch && matchCategory;
+    return matchSearch;
   });
 
   const openAdd = () => {
     setEditItem(null);
     setForm(emptyForm);
-    setErrors({});  // ✅ เพิ่มบรรทัดนี้
+    setErrors({});
     setDialogOpen(true);
   };
 
-  // ✅ ตอนนี้ "openEdit" คือการเปิดฟอร์มเคลื่อนย้าย — ต้องเติมค่าเข้า moveForm ไม่ใช่ form
   const openMove = (item) => {
     setEditItem(item);
     setMoveForm({
@@ -141,7 +130,6 @@ const [filterCategory, setFilterCategory] = useState('all');
     setMoveErrors({});
   };
 
-  // ✅ ส่งออกรายงานอุปกรณ์เป็นไฟล์ .xlsx โดยใช้ข้อมูลชุดที่ผ่านการค้นหา/กรองอยู่แล้ว (ตัวแปร filtered)
   const handleExportXLSX = () => {
     if (!filtered.length) {
       alert("ไม่มีข้อมูลอุปกรณ์ให้ดาวน์โหลดตามเงื่อนไขที่เลือก");
@@ -169,7 +157,6 @@ const [filterCategory, setFilterCategory] = useState('all');
 
     const worksheet = XLSX.utils.json_to_sheet(exportRows);
 
-    // ✅ ปรับความกว้างคอลัมน์ให้พอดีกับเนื้อหาโดยประมาณ
     const headers = Object.keys(exportRows[0]);
     worksheet['!cols'] = headers.map((header) => {
       const maxLen = Math.max(
@@ -215,8 +202,7 @@ const [filterCategory, setFilterCategory] = useState('all');
       purchase_date: form.purchase_date || null,
       warranty_expire: form.warranty_expire || null,
       purchase_price: form.purchase_price ? Number(form.purchase_price) : null,
-      installation_location: form.installation_location || null,  // ✅ เพิ่ม
-
+      installation_location: form.installation_location || null,
     };
 
     let result;
@@ -256,6 +242,7 @@ const [filterCategory, setFilterCategory] = useState('all');
     setEditItem(null);
     setSaving(false);
   };
+
   return (
     <div className="space-y-5">
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
@@ -270,22 +257,12 @@ const [filterCategory, setFilterCategory] = useState('all');
         </Button>
       </div>
 
+      {/* ✅ ตัด dropdown ฟิลเตอร์ประเภทออกแล้ว เหลือแค่ช่องค้นหา + ปุ่ม download */}
       <div className="flex flex-col sm:flex-row gap-3">
         <div className="relative flex-1 min-w-0 sm:min-w-48">
           <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
           <Input placeholder="ค้นหาชื่อ, asset tag, ยี่ห้อ..." className="pl-9 h-10 w-full" value={search} onChange={e => setSearch(e.target.value)} />
         </div>
-        <Select value={filterCategory} onValueChange={setFilterCategory}>
-          <SelectTrigger className="w-full sm:w-40 bg-card">
-            <Filter size={14} className="mr-2 text-muted-foreground" />
-            <SelectValue placeholder="ประเภทอุปกรณ์" />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="all">ทุกประเภท</SelectItem>
-            {categories.map(s => <SelectItem key={s} value={s}>{s}</SelectItem>)}
-          </SelectContent>
-        </Select>
-        {/* ✅ ปุ่มดาวน์โหลดรายงานอุปกรณ์เป็น .xlsx ตามข้อมูลที่ค้นหา/กรองอยู่ในขณะนั้น */}
         <Button
           variant="outline"
           onClick={handleExportXLSX}
@@ -308,7 +285,6 @@ const [filterCategory, setFilterCategory] = useState('all');
         />
       </div>
 
-      {/* ✅ ฟอร์มเคลื่อนย้าย — ใช้ state ชุดของตัวเองทั้งหมด ไม่แตะ form/errors/saving/closeConfirmOpen ของฟอร์มเพิ่มอุปกรณ์อีกต่อไป */}
       <DeviceEditDialog
         isOpen={editItem !== null}
         setIsOpen={(open) => !open && setEditItem(null)}
@@ -342,7 +318,6 @@ const [filterCategory, setFilterCategory] = useState('all');
         onSuccess={load}
       />
 
-      {/* Popup ยืนยันปิด สำหรับฟอร์ม "เพิ่มอุปกรณ์" เท่านั้น */}
       <CloseConfirmDialog
         isOpen={closeConfirmOpen}
         setIsOpen={setCloseConfirmOpen}
@@ -352,8 +327,6 @@ const [filterCategory, setFilterCategory] = useState('all');
         emptyForm={emptyForm}
       />
 
-      {/* ✅ Popup ยืนยันปิด แยกต่างหาก สำหรับฟอร์ม "เคลื่อนย้าย" โดยเฉพาะ
-          จุดสำคัญ: setDialogOpen ตรงนี้ต้องปิด editItem จริง ไม่งั้น dialog เคลื่อนย้ายจะค้างเปิดอยู่เบื้องหลัง */}
       <CloseConfirmDialog
         isOpen={moveCloseConfirmOpen}
         setIsOpen={setMoveCloseConfirmOpen}
@@ -368,7 +341,6 @@ const [filterCategory, setFilterCategory] = useState('all');
         setIsOpen={(open) => {
           if (!open) {
             setDetailItem(null);
-            // ✅ เคลียร์ ?id= ออกจาก URL ตอนปิด dialog ไม่งั้น refresh หน้าจะเด้ง dialog เดิมขึ้นมาอีก
             if (searchParams.get('id')) {
               searchParams.delete('id');
               setSearchParams(searchParams, { replace: true });
