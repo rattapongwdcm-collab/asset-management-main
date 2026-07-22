@@ -7,11 +7,12 @@ import DeviceTable from '@/components/Device/DeviceTable';
 import DeviceFormDialog from '@/components/Device/DeviceFormDialog';
 import CloseConfirmDialog from '@/components/Device/CloseConfirmDialog';
 import DeviceDetailDialog from '@/components/Device/DeviceDetailDialog';
-import { Plus, Search, Filter } from "lucide-react";
+import { Plus, Search, Filter, Download } from "lucide-react"; // ✅ เพิ่ม Download icon
 import DeviceEditDialog from '@/components/Device/DeviceEditDialog';
 import { logDeviceHistory } from '@/lib/deviceHistory';
 import { Monitor } from 'lucide-react'
 import { useSearchParams } from 'react-router-dom';
+import * as XLSX from 'xlsx'; // ✅ ต้องติดตั้งไลบรารีนี้ก่อน: npm install xlsx
 
 const statusColors = {
   'ใช้งาน': { bg: '#E0F2FE', color: '#000000' },
@@ -38,7 +39,7 @@ const departments = [
 const emptyForm = {
   asset_tag: '', name: '', category: '', brand: '', model: '',
   serial_number: '', status: '', assigned_to: '', department: '',
-  purchase_date: '', purchase_price: '', warranty_expire: '', image_url: '',
+  purchase_date: '', purchase_price: '', warranty_expire: '',
 };
 
 // ✅ ฟอร์มว่างเปล่าเฉพาะฟอร์ม "เคลื่อนย้าย" แยกต่างหาก
@@ -137,6 +138,50 @@ const [filterCategory, setFilterCategory] = useState('all');
     setMoveErrors({});
   };
 
+  // ✅ ส่งออกรายงานอุปกรณ์เป็นไฟล์ .xlsx โดยใช้ข้อมูลชุดที่ผ่านการค้นหา/กรองอยู่แล้ว (ตัวแปร filtered)
+  const handleExportXLSX = () => {
+    if (!filtered.length) {
+      alert("ไม่มีข้อมูลอุปกรณ์ให้ดาวน์โหลดตามเงื่อนไขที่เลือก");
+      return;
+    }
+
+    const exportRows = filtered.map((d) => ({
+      'รหัสอุปกรณ์': d.asset_tag || '',
+      'ชื่ออุปกรณ์': d.name || '',
+      'ประเภท': d.category || '',
+      'สถานะ': d.status || '',
+      'มอบหมายให้': d.assigned_to || '',
+      'แผนก': d.department || '',
+      'วันที่ซื้อ': d.purchase_date || '',
+      'วันหมดประกัน': d.warranty_expire || '',
+      'วันที่สร้างรายการ': d.created_at || '',
+      'วันที่แก้ไขล่าสุด': d.updated_at || '',
+      'อัปเดตล่าสุด': d.last_updated || '',
+      'บริษัท': d.company || '',
+      'ช่องทางติดต่อบริษัท': d.company_contact || '',
+      'ราคาซื้อ': d.purchase_price ?? '',
+      'สถานที่ติดตั้ง': d.installation_location || '',
+    }));
+
+    const worksheet = XLSX.utils.json_to_sheet(exportRows);
+
+    // ✅ ปรับความกว้างคอลัมน์ให้พอดีกับเนื้อหาโดยประมาณ
+    const headers = Object.keys(exportRows[0]);
+    worksheet['!cols'] = headers.map((header) => {
+      const maxLen = Math.max(
+        header.length,
+        ...exportRows.map((row) => String(row[header] ?? '').length)
+      );
+      return { wch: Math.min(Math.max(maxLen + 2, 10), 40) };
+    });
+
+    const workbook = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(workbook, worksheet, "Devices");
+
+    const today = new Date().toISOString().slice(0, 10);
+    XLSX.writeFile(workbook, `Device_Report_${today}.xlsx`);
+  };
+
   const handleSave = async () => {
     const newErrors = {};
     if (!form.asset_tag?.trim()) newErrors.asset_tag = "กรุณากรอก Asset Tag";
@@ -162,7 +207,6 @@ const [filterCategory, setFilterCategory] = useState('all');
       status: form.status,
       company: form.company,
       company_contact: form.company_contact,
-      image_url: form.image_url || null,
       purchase_date: form.purchase_date || null,
       warranty_expire: form.warranty_expire || null,
       purchase_price: form.purchase_price ? Number(form.purchase_price) : null,
@@ -236,6 +280,14 @@ const [filterCategory, setFilterCategory] = useState('all');
             {categories.map(s => <SelectItem key={s} value={s}>{s}</SelectItem>)}
           </SelectContent>
         </Select>
+        {/* ✅ ปุ่มดาวน์โหลดรายงานอุปกรณ์เป็น .xlsx ตามข้อมูลที่ค้นหา/กรองอยู่ในขณะนั้น */}
+        <Button
+          variant="outline"
+          onClick={handleExportXLSX}
+          className="gap-2 w-full sm:w-auto shrink-0"
+        >
+          <Download size={16} /> Download Report
+        </Button>
       </div>
 
       <div>

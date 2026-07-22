@@ -1,5 +1,5 @@
-import React, { useState, useEffect } from 'react';
-import { Monitor, Eye, ArrowRightLeft, Trash2, CalendarDays, AlertTriangle, CheckCircle2, ChevronLeft, ChevronRight } from 'lucide-react';
+import React, { useState, useEffect, useMemo } from 'react';
+import { Monitor, Eye, ArrowRightLeft, Trash2, CalendarDays, AlertTriangle, CheckCircle2, ChevronLeft, ChevronRight, ChevronUp, ChevronDown, ChevronsUpDown } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { supabase } from '@/lib/supabase';
 import DeleteConfirmDialog from '@/components/Device/DeleteConfirmDialog';
@@ -19,15 +19,52 @@ export default function DeviceTable({
 }) {
   const [currentPage, setCurrentPage] = useState(1);
 
-  const totalPages = Math.max(1, Math.ceil(filtered.length / ITEMS_PER_PAGE));
+  // ✅ state สำหรับ sort หัวตาราง — ค่าเริ่มต้นเรียงตาม "วันหมดประกัน" ใกล้หมดก่อน
+  const [sortConfig, setSortConfig] = useState({ key: 'warranty_expire', direction: 'asc' });
+
+  const handleSort = (key) => {
+    setSortConfig((prev) => {
+      if (prev.key === key) {
+        return { key, direction: prev.direction === 'asc' ? 'desc' : 'asc' };
+      }
+      return { key, direction: 'asc' };
+    });
+  };
+
+  // ✅ ฟังก์ชันเปรียบเทียบค่าสำหรับ sort แต่ละคอลัมน์ — วันหมดประกันเทียบแบบวันที่ ที่เหลือเทียบแบบข้อความ (ไม่สนตัวพิมพ์)
+  const compareValues = (a, b, key) => {
+    if (key === 'warranty_expire') {
+      const da = a.warranty_expire ? new Date(a.warranty_expire).getTime() : null;
+      const db = b.warranty_expire ? new Date(b.warranty_expire).getTime() : null;
+      if (da === null && db === null) return 0;
+      if (da === null) return 1;  // ไม่มีวันหมดประกัน ให้ไปอยู่ท้ายสุดเสมอ
+      if (db === null) return -1;
+      return da - db;
+    }
+    const va = (a[key] ?? '').toString().toLowerCase();
+    const vb = (b[key] ?? '').toString().toLowerCase();
+    return va.localeCompare(vb, 'th');
+  };
+
+  // ✅ เรียงข้อมูลตาม sortConfig (ต่อยอดจาก `filtered` ที่ส่งมาจาก Device.jsx) ก่อนค่อยแบ่งหน้า
+  const sortedItems = useMemo(() => {
+    const arr = [...filtered];
+    arr.sort((a, b) => {
+      const cmp = compareValues(a, b, sortConfig.key);
+      return sortConfig.direction === 'asc' ? cmp : -cmp;
+    });
+    return arr;
+  }, [filtered, sortConfig]);
+
+  const totalPages = Math.max(1, Math.ceil(sortedItems.length / ITEMS_PER_PAGE));
 
   useEffect(() => {
     if (currentPage > totalPages) {
       setCurrentPage(1);
     }
-  }, [filtered.length, totalPages, currentPage]);
+  }, [sortedItems.length, totalPages, currentPage]);
 
-  const paginatedItems = filtered.slice(
+  const paginatedItems = sortedItems.slice(
     (currentPage - 1) * ITEMS_PER_PAGE,
     currentPage * ITEMS_PER_PAGE
   );
@@ -141,6 +178,29 @@ export default function DeviceTable({
     );
   };
 
+  // ✅ หัวคอลัมน์แบบกดเรียงได้ — คลิกที่ข้อความ/ทั้งเซลล์ได้เลย, hover เปลี่ยนเคอร์เซอร์เป็นนิ้วชี้และพื้นหลังเข้มขึ้นเล็กน้อย
+  // ลูกศรจะโชว์ทิศทางปัจจุบันถ้าคอลัมน์นี้กำลังถูก sort อยู่ ไม่งั้นโชว์ไอคอนจางๆ บอกว่ากดได้
+  const SortableHeader = ({ label, sortKey }) => {
+    const isActive = sortConfig.key === sortKey;
+    return (
+      <th
+        className="text-left px-4 py-3 text-xs font-semibold text-muted-foreground uppercase tracking-wide cursor-pointer select-none hover:bg-muted/60 transition-colors"
+        onClick={() => handleSort(sortKey)}
+      >
+        <div className="flex items-center gap-1">
+          {label}
+          {isActive ? (
+            sortConfig.direction === 'asc'
+              ? <ChevronUp size={13} className="text-foreground" />
+              : <ChevronDown size={13} className="text-foreground" />
+          ) : (
+            <ChevronsUpDown size={13} className="opacity-30" />
+          )}
+        </div>
+      </th>
+    );
+  };
+
   // ✅ ปุ่ม action ชุดเดียว ใช้ร่วมกันทั้ง table (desktop) และ card (mobile)
   const ActionButtons = ({ d, locked }) => (
     <div className="flex items-center gap-1">
@@ -166,13 +226,10 @@ export default function DeviceTable({
       </Button>
     </div>
   );
-
   return (
-    <div className="bg-card border border-border rounded-xl overflow-hidden shadow-sm">
-
-      {/* ✅ MOBILE VIEW (< md): แสดงเป็นการ์ดแถวยาว แทนตารางที่คอลัมน์เยอะเกินจอเล็ก */}
-      <div className="md:hidden divide-y divide-border">
-        {paginatedItems.map((d) => {
+    <div className="bg-card border border-border rounded-xl overflow-hidden shadow-sm"> 
+    <div className="md:hidden divide-y divide-border">
+        {paginatedItems.map((d) => { 
           const sc = statusColors[d.status] || { bg: 'rgba(107,114,128,0.12)', color: '#6b7280' };
           const locked = isLocked(d.status);
           return (
@@ -204,19 +261,17 @@ export default function DeviceTable({
           );
         })}
       </div>
-
-      {/* ✅ DESKTOP / TABLET VIEW (md ขึ้นไป): ตารางเดิม พร้อม scroll แนวนอนกันคอลัมน์ล้นบนจอ tablet แคบๆ */}
       <div className="hidden md:block overflow-x-auto">
         <table className="w-full text-sm">
           <thead>
             <tr className="border-b border-border bg-muted/40">
-              <th className="text-left px-4 py-3 text-xs font-semibold text-muted-foreground uppercase tracking-wide">รหัสอุปกรณ์</th>
-              <th className="text-left px-4 py-3 text-xs font-semibold text-muted-foreground uppercase tracking-wide">ชื่ออุปกรณ์</th>
-              <th className="text-left px-4 py-3 text-xs font-semibold text-muted-foreground uppercase tracking-wide">ประเภท</th>
-              <th className="text-left px-4 py-3 text-xs font-semibold text-muted-foreground uppercase tracking-wide">แผนก</th>
+              <SortableHeader label="รหัสอุปกรณ์" sortKey="asset_tag" />
+              <SortableHeader label="ชื่ออุปกรณ์" sortKey="name" />
+              <SortableHeader label="ประเภท" sortKey="category" />
+              <SortableHeader label="แผนก" sortKey="department" />
               <th className="text-left px-4 py-3 text-xs font-semibold text-muted-foreground uppercase tracking-wide">มอบหมาย</th>
-              <th className="text-left px-4 py-3 text-xs font-semibold text-muted-foreground uppercase tracking-wide">สถานะ</th>
-              <th className="text-left px-4 py-3 text-xs font-semibold text-muted-foreground uppercase tracking-wide">วันหมดประกัน</th>
+              <SortableHeader label="สถานะ" sortKey="status" />
+              <SortableHeader label="วันหมดประกัน" sortKey="warranty_expire" />
               <th className="px-4 py-3" />
             </tr>
           </thead>
@@ -251,12 +306,10 @@ export default function DeviceTable({
           </tbody>
         </table>
       </div>
-
-      {/* ✅ Pagination: บนจอเล็กเรียงเป็นแนวตั้ง (ข้อความอยู่บน ปุ่มอยู่ล่าง กึ่งกลาง) จอใหญ่เรียงแนวนอนแบบเดิม */}
       {totalPages > 1 && (
         <div className="flex flex-col sm:flex-row items-center justify-between gap-2 px-4 py-3 border-t border-border">
           <p className="text-xs text-muted-foreground">
-            แสดง {(currentPage - 1) * ITEMS_PER_PAGE + 1}–{Math.min(currentPage * ITEMS_PER_PAGE, filtered.length)} จาก {filtered.length} รายการ
+            แสดง {(currentPage - 1) * ITEMS_PER_PAGE + 1}–{Math.min(currentPage * ITEMS_PER_PAGE, sortedItems.length)} จาก {sortedItems.length} รายการ
           </p>
 
           <div className="flex items-center gap-1">
