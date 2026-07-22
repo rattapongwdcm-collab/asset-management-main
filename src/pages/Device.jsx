@@ -39,7 +39,7 @@ const departments = [
 const emptyForm = {
   asset_tag: '', name: '', category: '', brand: '', model: '',
   serial_number: '', status: '', assigned_to: '', department: '',
-  purchase_date: '', purchase_price: '', warranty_expire: '',
+  purchase_date: '', purchase_price: '', warranty_expire: '', image_url: '',
 };
 
 // ✅ ฟอร์มว่างเปล่าเฉพาะฟอร์ม "เคลื่อนย้าย" แยกต่างหาก
@@ -107,18 +107,21 @@ export default function Device() {
 
 const [filterCategory, setFilterCategory] = useState('all');
 
+  // ✅ ค้นหาแบบแยกคำ (token-based): ตัดคำค้นหาด้วยช่องว่าง แล้วเช็คว่าทุกคำต้องเจอในข้อมูลรวมของแถวนั้น
+  // เดิมเอาทั้งข้อความที่พิมพ์ (รวมช่องว่างตรงกลาง) ไปเทียบเป็นสตริงเดียว ถ้าช่องว่าง/ลำดับคำในข้อมูลจริงไม่ตรงเป๊ะ จะหลุดผลลัพธ์ไป
   const filtered = devices.filter((d) => {
-  const keyword = search.toLowerCase();
-  const matchSearch = !search ||
-    d.name?.toLowerCase().includes(keyword) ||
-    d.asset_tag?.toLowerCase().includes(keyword) ||
-    d.brand?.toLowerCase().includes(keyword) ||
-    d.department?.toLowerCase().includes(keyword) ||
-    d.assigned_to?.toLowerCase().includes(keyword);
+    const combined = [d.name, d.asset_tag, d.brand, d.department, d.assigned_to]
+      .filter(Boolean)
+      .join(' ')
+      .toLowerCase()
+      .replace(/\s+/g, ' '); // รวมช่องว่างซ้ำ/หลายแบบให้เหลือช่องว่างเดียว กันปัญหาเว้นวรรคไม่ตรงกัน
 
-  const matchCategory = filterCategory === "all" || d.category === filterCategory;
-  return matchSearch && matchCategory;
-});
+    const tokens = search.toLowerCase().trim().split(/\s+/).filter(Boolean);
+    const matchSearch = tokens.length === 0 || tokens.every((token) => combined.includes(token));
+
+    const matchCategory = filterCategory === "all" || d.category === filterCategory;
+    return matchSearch && matchCategory;
+  });
 
   const openAdd = () => {
     setEditItem(null);
@@ -156,6 +159,7 @@ const [filterCategory, setFilterCategory] = useState('all');
       'วันหมดประกัน': d.warranty_expire || '',
       'วันที่สร้างรายการ': d.created_at || '',
       'วันที่แก้ไขล่าสุด': d.updated_at || '',
+      'ลิงก์รูปภาพ': d.image_url || '',
       'อัปเดตล่าสุด': d.last_updated || '',
       'บริษัท': d.company || '',
       'ช่องทางติดต่อบริษัท': d.company_contact || '',
@@ -207,6 +211,7 @@ const [filterCategory, setFilterCategory] = useState('all');
       status: form.status,
       company: form.company,
       company_contact: form.company_contact,
+      image_url: form.image_url || null,
       purchase_date: form.purchase_date || null,
       warranty_expire: form.warranty_expire || null,
       purchase_price: form.purchase_price ? Number(form.purchase_price) : null,

@@ -1,10 +1,11 @@
-import { Navigate, Outlet } from "react-router-dom";
+import { Navigate, Outlet, useLocation } from "react-router-dom";
 import { supabase } from "@/lib/supabase";
 import { useEffect, useState } from "react";
 
 export default function ProtectedRoute() {
   const [loading, setLoading] = useState(true);
   const [session, setSession] = useState(null);
+  const location = useLocation();
 
   useEffect(() => {
     const checkSession = async () => {
@@ -21,5 +22,12 @@ export default function ProtectedRoute() {
     return <div>Loading...</div>;
   }
 
-  return session ? <Outlet /> : <Navigate to="/login" replace />;
+  if (!session) {
+    // จำ path เดิม (เช่น /device?id=xxx) ไว้ใน query param redirect
+    // ก่อนเด้งไปหน้า login เพื่อพากลับมาหลัง login สำเร็จ
+    const redirectTo = encodeURIComponent(location.pathname + location.search);
+    return <Navigate to={`/login?redirect=${redirectTo}`} replace />;
+  }
+
+  return <Outlet />;
 }
