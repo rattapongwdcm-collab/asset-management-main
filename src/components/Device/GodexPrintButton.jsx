@@ -81,7 +81,7 @@ export default function GodexPrintButton({ form }) {
         </p>
 
         {/* ✅ ข้อความเตือนเล็กๆ ด้านล่างสุด แจ้งเรื่องชำรุด + เบอร์ติดต่อ */}
-        <p className="text-[8px] text-gray-600 mt-1 border-t border-dashed border-gray-400 pt-1 leading-tight">
+        <p className="text-[8px] text-red-600 mt-1 border-t border-dashed border-gray-400 pt-1 leading-tight">
           ⚠️ หากบาร์โค้ดชำรุดหรือสูญหาย กรุณาติดต่อ 096-285-5419
         </p>
       </div>
