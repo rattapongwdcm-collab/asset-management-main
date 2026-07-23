@@ -1,8 +1,7 @@
 import { Button } from '@/components/ui/button';
 import { TableCell, TableRow } from '@/components/ui/table';
 import { PackagePlus, PackageMinus } from 'lucide-react';
-import { statusColors, formatPrice } from '@/components/Accessories/accessoryHelpers';
-
+import { statusColors, formatPrice } from "@/lib/accessoryHelpers";
 /**
  * แถวตารางเดียวสำหรับ desktop/tablet view (md ขึ้นไป)
  * — guest ไม่เห็นปุ่มเพิ่มสต็อค (PackagePlus) เห็นแค่ปุ่มตัดสต๊อค
