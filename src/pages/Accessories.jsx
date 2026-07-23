@@ -17,7 +17,7 @@ import DepartmentDropdown from '@/components/Accessories/DepartmentDropdown';
 import AccessoryMobileCard from '@/components/Accessories/AccessoryMobileCard';
 import AccessoryTableRow from '@/components/Accessories/AccessoryTableRow';
 import { computeStatus } from '@/lib/AccessoryHelpers';
-import { DEPARTMENTS } from '@/lib/Departments';
+import { DEPARTMENTS } from '@/lib/DEPARTMENTS';
 
 const emptyForm = {
   name: '', brand: '', quantity: '1', unit: '', price: '', department: '',
