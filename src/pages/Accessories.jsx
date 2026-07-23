@@ -14,9 +14,9 @@ import {
 import * as XLSX from 'xlsx';
 
 import DepartmentDropdown from '@/components/Accessories/DepartmentDropdown';
-import AccessoryMobileCard from '@/components/Accessories/AccessorymobileCard';
-import AccessoryTableRow from '@/components/Accessories/Accessorytablerow';
-import { computeStatus } from '@/lib/accessoryHelpers';
+import AccessorymobileCard from '@/components/Accessories/AccessorymobileCard';
+import Accessorytablerow from '@/components/Accessories/Accessorytablerow';
+import { computeStatus } from '@/lib/AccessoryHelpers';
 import { DEPARTMENTS } from '@/lib/Departments';
 
 const emptyForm = {
