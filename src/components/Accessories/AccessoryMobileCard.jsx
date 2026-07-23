@@ -1,6 +1,6 @@
 import { Button } from '@/components/ui/button';
 import { PackagePlus, PackageMinus } from 'lucide-react';
-import { statusColors, formatPrice } from "@/lib/accessoryHelpers";
+import { statusColors, formatPrice } from "@/lib/AccessoryHelpers";
 /**
  * การ์ดแถวเดียวสำหรับ mobile view (< md)
  * ดีไซน์: ชื่อ + badge สถานะด้านบน, รายละเอียดยี่ห้อ/แผนกเป็น 2 คอลัมน์,
