@@ -14,8 +14,8 @@ import {
 import * as XLSX from 'xlsx';
 
 import DepartmentDropdown from '@/components/Accessories/DepartmentDropdown';
-import AccessorymobileCard from '@/components/Accessories/AccessorymobileCard';
-import Accessorytablerow from '@/components/Accessories/Accessorytablerow';
+import AccessoryMobileCard from '@/components/Accessories/AccessoryMobileCard';
+import AccessoryTableRow from '@/components/Accessories/AccessoryTableRow';
 import { computeStatus } from '@/lib/AccessoryHelpers';
 import { DEPARTMENTS } from '@/lib/Departments';
 
