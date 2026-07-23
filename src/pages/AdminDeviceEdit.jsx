@@ -299,7 +299,7 @@ export default function AdminDeviceEdit() {
             <div className="flex items-center justify-between">
                 <h2 className="text-xl sm:text-2xl font-bold text-foreground font-heading flex items-center gap-2">
                     <ShieldAlert className="text-primary shrink-0" size={22} />
-                    แก้ไขอุปกรณ์ (Admin)
+                    แก้ไขอุปกรณ์ (ผู้ดูแลระบบ)
                 </h2>
             </div>
 

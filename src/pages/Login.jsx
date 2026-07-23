@@ -73,7 +73,7 @@ export default function Login() {
     <AuthLayout
       icon={mode === "login" ? Lock : KeyRound}
       title={mode === "login" ? "เข้าสู่ระบบ" : "เปลี่ยนรหัสผ่าน"}
-      subtitle="Asset Management System"
+      subtitle="ระบบบริหารจัดการสินทรัพย์"
     >
       {mode === "login" ? (
         <>

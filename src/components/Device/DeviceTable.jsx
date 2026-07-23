@@ -22,6 +22,20 @@ export default function DeviceTable({
   // ✅ state สำหรับ sort หัวตาราง — ค่าเริ่มต้นเรียงตาม "วันหมดประกัน" ใกล้หมดก่อน
   const [sortConfig, setSortConfig] = useState({ key: 'warranty_expire', direction: 'asc' });
 
+  // ✅ role ของผู้ใช้ปัจจุบัน — ใช้จำกัดสิทธิ์ของ guest ให้ดูได้อย่างเดียว (ไม่ให้ย้าย/ลบ)
+  const [userRole, setUserRole] = useState(null);
+  const isGuest = userRole === 'guest';
+
+  useEffect(() => {
+    const loadUserRole = async () => {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) return;
+      const { data } = await supabase.from('profiles').select('role').eq('id', user.id).single();
+      setUserRole(data?.role || 'user');
+    };
+    loadUserRole();
+  }, []);
+
   const handleSort = (key) => {
     setSortConfig((prev) => {
       if (prev.key === key) {
@@ -70,6 +84,12 @@ export default function DeviceTable({
   );
 
   const handleDelete = async (deviceId) => {
+    // ✅ กันไว้อีกชั้น (defense in depth) — guest ห้ามลบแม้จะเรียกฟังก์ชันนี้ตรงๆ
+    if (isGuest) {
+      alert('บัญชี guest ดูข้อมูลได้อย่างเดียว ไม่สามารถลบอุปกรณ์ได้');
+      return;
+    }
+
     const device = filtered.find(d => d.id === deviceId);
     if (!device) return;
 
@@ -202,30 +222,35 @@ export default function DeviceTable({
   };
 
   // ✅ ปุ่ม action ชุดเดียว ใช้ร่วมกันทั้ง table (desktop) และ card (mobile)
-  const ActionButtons = ({ d, locked }) => (
-    <div className="flex items-center gap-1">
-      <Button
-        variant="ghost" size="icon" className="h-8 w-8"
-        onClick={(e) => { e.stopPropagation(); setDetailItem(d); }}
-      >
-        <Eye size={14} />
-      </Button>
-      <Button
-        variant="ghost" size="icon" className="h-8 w-8 text-foreground/70 hover:text-foreground"
-        disabled={locked}
-        onClick={(e) => { e.stopPropagation(); if (setEditItem) setEditItem(d); }}
-      >
-        <ArrowRightLeft size={14} className={locked ? 'opacity-30' : ''} />
-      </Button>
-      <Button
-        variant="ghost" size="icon" className="h-8 w-8 text-destructive hover:text-destructive"
-        disabled={locked}
-        onClick={(e) => { e.stopPropagation(); setDeleteId(d.id); }}
-      >
-        <Trash2 size={14} className={locked ? 'opacity-30' : ''} />
-      </Button>
-    </div>
-  );
+  // guest เห็นปุ่มย้าย/ลบเหมือนเดิม แต่กดไม่ได้ (disabled) และสีจางลง — ไม่ซ่อนไปเลย
+  const ActionButtons = ({ d, locked }) => {
+    const editDisabled = locked || isGuest;
+    const deleteDisabled = locked || isGuest;
+    return (
+      <div className="flex items-center gap-1">
+        <Button
+          variant="ghost" size="icon" className="h-8 w-8"
+          onClick={(e) => { e.stopPropagation(); setDetailItem(d); }}
+        >
+          <Eye size={14} />
+        </Button>
+        <Button
+          variant="ghost" size="icon" className="h-8 w-8 text-foreground/70 hover:text-foreground"
+          disabled={editDisabled}
+          onClick={(e) => { e.stopPropagation(); if (setEditItem) setEditItem(d); }}
+        >
+          <ArrowRightLeft size={14} className={editDisabled ? 'opacity-30' : ''} />
+        </Button>
+        <Button
+          variant="ghost" size="icon" className="h-8 w-8 text-destructive hover:text-destructive"
+          disabled={deleteDisabled}
+          onClick={(e) => { e.stopPropagation(); setDeleteId(d.id); }}
+        >
+          <Trash2 size={14} className={deleteDisabled ? 'opacity-30' : ''} />
+        </Button>
+      </div>
+    );
+  };
   return (
     <div className="bg-card border border-border rounded-xl overflow-hidden shadow-sm"> 
     <div className="md:hidden divide-y divide-border">

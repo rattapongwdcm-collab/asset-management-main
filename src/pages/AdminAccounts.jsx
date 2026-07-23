@@ -5,7 +5,8 @@ import { Input } from '@/components/ui/input';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { UserPlus, Search, Shield, ShieldCheck, User as UserIcon, Pencil, Trash2, KeyRound, TriangleAlert } from 'lucide-react';
+import { UserPlus, Search, Shield, ShieldCheck, User as UserIcon, UserX, Pencil, Trash2, KeyRound, TriangleAlert } from 'lucide-react';
+import { ROLES, useUserRole } from '../hooks/use-user-role';
 
 // ── ค่าคงที่ (Constants) ────────────────────────────────────────────────
 const MIN_PASSWORD_LENGTH = 5;
@@ -13,9 +14,10 @@ const MIN_PASSWORD_LENGTH = 5;
 const ROLE_BADGE = {
     admin: { label: 'Admin', bg: '#FEE2E2', color: '#B91C1C' },
     user: { label: 'User', bg: '#E0F2FE', color: '#0369A1' },
+    guest: { label: 'Guest', bg: '#F1F5F9', color: '#475569' },
 };
 
-const EMPTY_ADD_FORM = { email: '', password: '', full_name: '', role: 'user' };
+const EMPTY_ADD_FORM = { email: '', password: '', full_name: '', role: ROLES.USER };
 
 // ข้อความ error จาก Supabase ที่บ่งบอกว่ารหัสผ่านใหม่ซ้ำกับรหัสผ่านเดิม
 // (GoTrue จะตอบกลับมาเป็นข้อความทำนองนี้เมื่อรหัสผ่านใหม่เหมือนรหัสผ่านเดิม)
@@ -39,12 +41,13 @@ function RoleSelect({ value, onChange, disabled }) {
             <SelectContent>
                 <SelectItem value="user">User</SelectItem>
                 <SelectItem value="admin">Admin</SelectItem>
+                <SelectItem value="guest">Guest</SelectItem>
             </SelectContent>
         </Select>
     );
 }
 
-/** ป้าย role สีๆ (Admin / User) */
+/** ป้าย role สีๆ (Admin / User / Guest) */
 function RoleBadge({ role }) {
     const badge = ROLE_BADGE[role] || ROLE_BADGE.user;
     return (
@@ -59,6 +62,9 @@ function RoleBadge({ role }) {
 
 // ── Main Component ───────────────────────────────────────────────────────
 export default function AdminAccounts() {
+    // ── สิทธิ์ของผู้ใช้ปัจจุบัน — หน้านี้สำหรับแอดมินเท่านั้น ──
+    const { isAdmin, loading: roleLoading } = useUserRole();
+
     // รายชื่อบัญชีทั้งหมด + สถานะโหลด + ค้นหา
     const [profiles, setProfiles] = useState([]);
     const [loading, setLoading] = useState(true);
@@ -75,7 +81,7 @@ export default function AdminAccounts() {
 
     // Dialog แก้ไขสิทธิ์ (role) + เปลี่ยนรหัสผ่าน
     const [editItem, setEditItem] = useState(null);
-    const [editRole, setEditRole] = useState('user');
+    const [editRole, setEditRole] = useState(ROLES.USER);
     const [editPassword, setEditPassword] = useState('');
     const [editSaving, setEditSaving] = useState(false);
     const [editError, setEditError] = useState('');
@@ -282,6 +288,23 @@ export default function AdminAccounts() {
 
     const isDeletingSelf = deleteItem?.id === currentUserId;
 
+    // ── Guard: หน้านี้สำหรับแอดมินเท่านั้น ──────────────────────────
+    if (roleLoading) {
+        return (
+            <div className="flex justify-center py-16">
+                <div className="w-8 h-8 border-4 border-primary/20 border-t-primary rounded-full animate-spin" />
+            </div>
+        );
+    }
+
+    if (!isAdmin) {
+        return (
+            <div className="max-w-[1200px] mx-auto w-full text-center py-16 text-muted-foreground">
+                หน้านี้สำหรับแอดมินเท่านั้น
+            </div>
+        );
+    }
+
     // ── Render ────────────────────────────────────────────────────────
     return (
         // max-w กันไม่ให้เนื้อหายืดกว้างเกินไปบนจอใหญ่ (24"/27"+) และ mx-auto จัดกึ่งกลาง
@@ -290,7 +313,7 @@ export default function AdminAccounts() {
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
                 <h2 className="text-xl sm:text-2xl font-bold text-foreground font-heading flex items-center gap-2">
                     <ShieldCheck className="text-primary shrink-0" size={22} />
-                    จัดการบัญชีผู้ใช้ (Admin)
+                    จัดการบัญชีผู้ใช้ (ผู้ดูแลระบบ)
                 </h2>
                 <Button onClick={() => {
                     if (document.activeElement instanceof HTMLElement) {
@@ -337,7 +360,7 @@ export default function AdminAccounts() {
                             >
                                 <div className="min-w-0 flex items-center gap-3">
                                     <div className="w-9 h-9 rounded-full bg-muted flex items-center justify-center shrink-0">
-                                        {p.role === 'admin' ? <Shield size={16} /> : <UserIcon size={16} />}
+                                        {p.role === ROLES.ADMIN ? <Shield size={16} /> : p.role === ROLES.GUEST ? <UserX size={16} /> : <UserIcon size={16} />}
                                     </div>
                                     <div className="min-w-0">
                                         <p className="font-semibold text-sm truncate flex items-center gap-1.5">

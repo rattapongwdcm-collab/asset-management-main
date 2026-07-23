@@ -80,8 +80,8 @@ export default function Layout() {
             <Server size={18} className="text-white" />
           </div>
           <div>
-            <p className="text-xs font-semibold tracking-widest uppercase" style={{ color: 'hsl(var(--accent))' }}>IT</p>
-            <p className="text-sm font-bold leading-tight text-white">Asset Management</p>
+            <p className="text-xs font-semibold tracking-widest uppercase" style={{ color: 'hsl(var(--accent))' }}></p>
+            <p className="text-sm font-bold leading-tight text-white">การจัดการสินทรัพย์</p>
           </div>
 
           {/* ✅ ปุ่มปิด (X) แสดงเฉพาะบนมือถือ อยู่ในแถบหัว sidebar */}
@@ -141,7 +141,7 @@ export default function Layout() {
             <Menu size={22} />
           </button>
 
-          <h1 className="text-white font-heading font-semibold text-base tracking-wide truncate">Asset Management</h1>
+          <h1 className="text-white font-heading font-semibold text-base tracking-wide truncate">การจัดการสินทรัพย์</h1>
           <div className="ml-auto flex items-center gap-2 shrink-0">
             <span className="w-2 h-2 rounded-full" style={{ background: '#22c55e' }} />
             <span className="text-xs hidden sm:inline" style={{ color: 'hsl(var(--sidebar-text))' }}>

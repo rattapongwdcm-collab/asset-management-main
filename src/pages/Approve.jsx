@@ -6,12 +6,23 @@ import { logDeviceHistory } from '@/lib/deviceHistory';
 
 // ✅ map ชนิดคำขอ -> ชื่อ action ตอนถูกปฏิเสธ ใช้ตอน log ประวัติ แยกไว้นอก component กันสร้างซ้ำทุก render
 const rejectActionMap = {
-  repair: 'repair_rejected',
-  edit: 'edit_rejected',
-  move: 'move_rejected',
-  delete: 'delete_rejected',
-  delete_accessory: 'delete_accessory_rejected',
+  ขอแจ้งซ่อม: 'repair_rejected',
+  ขอแก้ไข: 'edit_rejected',
+  ขอเคลื่อนย้าย: 'move_rejected',
+  ขอลบอุปกรณ์: 'delete_rejected',
+  ขอลบอุปกรณ์เสริม: 'delete_accessory_rejected',
 };
+
+// ✅ map request_type (ค่าดิบในตาราง approvals เป็นภาษาอังกฤษ) -> ป้ายภาษาไทยที่โชว์ในคอลัมน์ "ประเภท"
+const requestTypeLabels = {
+  repair: 'ขอแจ้งซ่อม',
+  edit: 'ขอแก้ไขข้อมูลอุปกรณ์',
+  move: 'ขอเคลื่อนย้ายอุปกรณ์',
+  delete: 'ขอลบอุปกรณ์',
+  delete_accessory: 'ขอลบอุปกรณ์เสริม',
+  edit_accessory: 'ขอปรับสต็อคอุปกรณ์เสริม',
+};
+
 const computeStatus = (qty) => (Number(qty) > 0 ? 'สำรอง' : 'หมด');
 export default function Approve() {
   const [approvals, setApprovals] = useState([]);
@@ -28,7 +39,7 @@ export default function Approve() {
 
     const { data, error } = await supabase
       .from('approvals')
-      .select('*, profiles (email, full_name), accessories (name, brand, department, status, price, unit, quantity)')
+      .select('*, profiles (email, full_name), devices (name, asset_tag), accessories (name)')
       .eq('status', 'Pending')
       .order('created_at', { ascending: false });
     if (error) {
@@ -182,7 +193,7 @@ export default function Approve() {
 
           if (newQuantity < 0) {
             throw new Error(
-              `กรุณาตรวจสอบสต๊อก (คงเหลือปัจจุบัน ${currentAccessory?.quantity}, คำขอ ${delta > 0 ? '+' : ''}${delta}) ปฏิเสธคำขอนี้แทน`
+              `กรุณาตรวจสอบสต๊อก (คงเหลือปัจจุบัน ${currentAccessory?.quantity}, คำขอ ${delta > 0 ? '+' : ''}${delta}) กรุณาปฏิเสธคำขอนี้แทน`
             );
           }
 
@@ -266,6 +277,9 @@ export default function Approve() {
   // ชื่อ/รหัสที่จะโชว์ในตาราง รองรับทั้งรายการของ devices และ accessories
   const displayName = (item) => item.devices?.name || item.device_name || item.accessories?.name || item.accessory_name || '—';
   const displayCode = (item) => item.devices?.asset_tag || item.description || '—';
+  // ป้ายประเภทคำขอเป็นภาษาไทย — แปลงจาก request_type ดิบ (อังกฤษ) ผ่าน requestTypeLabels
+  // ถ้าเจอ request_type ที่ไม่รู้จัก (ไม่อยู่ใน map) ให้โชว์ค่าดิบไปก่อนกันไม่ให้หายไปเฉยๆ
+  const displayType = (item) => requestTypeLabels[(item.request_type || '').trim().toLowerCase()] || item.request_type;
 
   return (
     <div className="space-y-5">
@@ -290,8 +304,8 @@ export default function Approve() {
                     <p className="font-medium text-foreground text-sm truncate">{displayName(item)}</p>
                     <p className="font-mono text-xs text-muted-foreground">{displayCode(item)}</p>
                   </div>
-                  <span className="text-xs font-semibold capitalize px-2 py-1 rounded-full bg-primary/10 text-primary shrink-0">
-                    {item.request_type}
+                  <span className="text-xs font-semibold px-2 py-1 rounded-full bg-primary/10 text-primary shrink-0">
+                    {displayType(item)}
                   </span>
                 </div>
 
@@ -332,7 +346,7 @@ export default function Approve() {
                   <td className="px-4 py-3">{item.profiles?.full_name || item.profiles?.email || '—'}</td>
                   <td className="px-4 py-3">{displayCode(item)}</td>
                   <td className="px-4 py-3">{displayName(item)}</td>
-                  <td className="px-4 py-3 font-semibold capitalize">{item.request_type}</td>
+                  <td className="px-4 py-3 font-semibold">{displayType(item)}</td>
                   <td className="px-4 py-3">
                     <div className="flex justify-center">
                       <ApproveActions item={item} />

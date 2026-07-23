@@ -1,21 +1,7 @@
 import { useState, useEffect } from 'react';
 import { supabase } from '@/lib/supabase';
-import { Monitor, Wrench, PackageOpen, TrendingUp, Laptop, Printer, Wifi, Server, Smartphone, Tablet, Package, LayoutDashboard, PackageX } from 'lucide-react';
+import { Monitor, Wrench, PackageOpen, TrendingUp, LayoutDashboard, PackageX } from 'lucide-react';
 import { Link } from 'react-router-dom';
-
-// ✅ ตั้งค่าหมวดหมู่อุปกรณ์แบบ static ไว้นอก component ก็ได้ (ไม่พึ่ง state/props เลย)
-// แต่เก็บไว้ในนี้ตามเดิมเพื่อไม่ให้กระทบโครงสร้างไฟล์อื่นที่อาจ import ไปใช้
-const categoryConfig = [
-  { key: 'Laptop', label: 'Laptop', icon: Laptop, color: '#3b82f6' },
-  { key: 'Desktop', label: 'Desktop', icon: Monitor, color: '#6366f1' },
-  { key: 'Monitor', label: 'Monitor', icon: Monitor, color: '#8b5cf6' },
-  { key: 'Printer', label: 'Printer', icon: Printer, color: '#ec4899' },
-  { key: 'Network', label: 'Network', icon: Wifi, color: '#06b6d4' },
-  { key: 'Server', label: 'Server', icon: Server, color: '#f59e0b' },
-  { key: 'Mobile', label: 'Mobile', icon: Smartphone, color: '#10b981' },
-  { key: 'Tablet', label: 'Tablet', icon: Tablet, color: '#14b8a6' },
-  { key: 'Other', label: 'Other', icon: Package, color: '#6b7280' },
-];
 
 // ✅ สีประจำสถานะงานซ่อม แยกออกมานอก component เพื่อไม่ต้องสร้าง object ใหม่ทุกครั้งที่ re-render
 const repairStatusColors = {
@@ -24,6 +10,12 @@ const repairStatusColors = {
   Completed: '#10b981',
   Cancelled: '#6b7280',
   'Waiting Parts': '#8b5cf6',
+};
+
+// ✅ สีตามสถานะอุปกรณ์เสริม (ใช้ตรงกับ Accessories.jsx: 'สำรอง' = มีของ, 'หมด' = หมด)
+const accessoryStatusColors = {
+  'สำรอง': { bg: '#DCFCE7', color: '#166534' },
+  'หมด': { bg: '#FFE4E6', color: '#9F1239' },
 };
 
 export default function Dashboard() {
@@ -63,23 +55,15 @@ export default function Dashboard() {
     outOfStock: stats.accessories.filter(a => a.status === 'หมด').length,
   };
 
+  // 📋 อุปกรณ์เสริมทั้งหมด เรียงชื่อ ก-ฮ ให้หาง่าย — ใช้แทนบล็อก "จำนวนอุปกรณ์แยกตามประเภท" เดิม
+  const allAccessories = [...stats.accessories].sort((a, b) =>
+    (a.name || '').localeCompare(b.name || '', 'th')
+  );
+
   // รายการอุปกรณ์เสริมที่หมดสต็อก ใช้โชว์เป็น warning list ด้านล่าง (เรียงชื่อ ก-ฮ ให้หาง่าย)
   const outOfStockAccessories = stats.accessories
     .filter(a => a.status === 'หมด')
     .sort((a, b) => (a.name || '').localeCompare(b.name || '', 'th'));
-
-  // 📊 แยกจำนวนอุปกรณ์ตามประเภท (category) จากข้อมูลจริงในทะเบียน
-  // อุปกรณ์ที่ category ไม่ตรงกับหมวดที่รู้จัก จะถูกจัดเข้ากลุ่ม 'Other' อัตโนมัติ
-  const knownKeys = categoryConfig.map(c => c.key);
-  const categoryCounts = stats.devices.reduce((acc, d) => {
-    const cat = knownKeys.includes(d.category) ? d.category : 'Other';
-    acc[cat] = (acc[cat] || 0) + 1;
-    return acc;
-  }, {});
-  const categoryStats = categoryConfig.map(c => ({
-    ...c,
-    count: categoryCounts[c.key] || 0,
-  }));
 
   // การ์ดสรุปด้านบนสุด: อุปกรณ์ทั้งหมด / งานซ่อม / อุปกรณ์เสริม
   const summaryCards = [
@@ -153,32 +137,43 @@ export default function Dashboard() {
         ))}
       </div>
 
-      {/* จำนวนอุปกรณ์แยกตามประเภท */}
-      <div className="bg-card border border-border rounded-xl p-5">
-        <div className="flex items-center gap-2 mb-4">
-          <PackageOpen size={16} className="text-primary" />
-          <h3 className="font-semibold text-sm text-foreground">จำนวนอุปกรณ์แยกตามประเภท</h3>
-        </div>
-        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
-          {categoryStats.map(cat => (
-            <div
-              key={cat.key}
-              className="rounded-lg border border-border p-3 flex items-center gap-3 hover:shadow-sm transition-shadow"
-            >
-              <div
-                className="w-9 h-9 rounded-lg flex items-center justify-center shrink-0"
-                style={{ background: `${cat.color}20` }}
-              >
-                <cat.icon size={16} style={{ color: cat.color }} />
-              </div>
-              <div className="min-w-0">
-                <p className="text-xs text-muted-foreground truncate">{cat.label}</p>
-                <p className="text-lg font-bold text-foreground leading-tight">{cat.count}</p>
-              </div>
+      {/* ✅ รายการอุปกรณ์เสริมทั้งหมด — แทนที่บล็อก "จำนวนอุปกรณ์แยกตามประเภท" เดิม
+          แสดงเฉพาะตอนมีข้อมูลอุปกรณ์เสริมอยู่จริง เหมือน pattern งานซ่อมด้านล่าง */}
+      {allAccessories.length > 0 && (
+        <div className="bg-card border border-border rounded-xl p-5">
+          <div className="flex items-center justify-between mb-4">
+            <div className="flex items-center gap-2">
+              <PackageOpen size={16} className="text-primary" />
+              <h3 className="font-semibold text-sm text-foreground">รายการอุปกรณ์เสริม</h3>
             </div>
-          ))}
+            <Link to="/accessories" className="text-xs text-blue-500 hover:underline">ดูทั้งหมด →</Link>
+          </div>
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+            {allAccessories.map(a => {
+              const sc = accessoryStatusColors[a.status] || { bg: 'rgba(107,114,128,0.12)', color: '#6b7280' };
+              return (
+                <div
+                  key={a.id}
+                  className="rounded-lg border border-border p-3 flex items-center justify-between gap-2 hover:shadow-sm transition-shadow"
+                >
+                  <div className="min-w-0">
+                    <p className="text-sm font-medium text-foreground truncate">{a.name}</p>
+                    <p className="text-xs text-muted-foreground truncate">
+                      {a.brand || '-'} · {a.quantity ?? 0} {a.unit || ''}
+                    </p>
+                  </div>
+                  <span
+                    className="text-xs font-medium px-2.5 py-1 rounded-full shrink-0"
+                    style={{ background: sc.bg, color: sc.color }}
+                  >
+                    {a.status}
+                  </span>
+                </div>
+              );
+            })}
+          </div>
         </div>
-      </div>
+      )}
 
       {/* อุปกรณ์เสริมที่หมดสต็อก — แสดงเฉพาะตอนมีรายการหมดจริง (เหมือน pattern งานซ่อมล่าสุดด้านล่าง) */}
       {outOfStockAccessories.length > 0 && (

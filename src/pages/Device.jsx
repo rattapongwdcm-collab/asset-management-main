@@ -14,18 +14,17 @@ import { useSearchParams } from 'react-router-dom';
 import * as XLSX from 'xlsx';
 
 const statusColors = {
-  'ใช้งาน': { bg: '#E0F2FE', color: '#000000' },
-  'สำรอง': { bg: '#DCFCE7', color: '#000000' },
-  'กำลังซ่อม': { bg: '#FEF3C7', color: '#000000' },
-  'รออนุมัติส่งซ่อม': { bg: '#FFE4E6', color: '#9F1239' },
-  'ยืม': { bg: '#F3E8FF', color: '#000000' },
-  'เสีย': { bg: '#F1F5F9', color: '#000000' },
-  'รออนุมัติลบ': { bg: '#FFE4E6', color: '#9F1239' },
-  'รออนุมัติแก้ไข': { bg: '#FEF3C7', color: '#D97706' }
+  'ใช้งาน': { bg: '#22C55E', color: '#ffffff' },
+  'สำรอง': { bg: '#3B82F6', color: '#ffffff' },
+  'กำลังซ่อม': { bg: '#F59E0B', color: '#ffffff' },
+  'รออนุมัติส่งซ่อม': { bg: '#A855F7', color: '#ffffff' },
+  'เสีย': { bg: '#EF4444', color: '#ffffff' },
+  'รออนุมัติลบ': { bg: '#A855F7', color: '#ffffff' },
+  'รออนุมัติแก้ไข': { bg: '#A855F7', color: '#ffffff' }
 };
 
 const categories = ['Laptop', 'Desktop', 'Monitor', 'Printer', 'Network', 'Server', 'Mobile', 'Tablet', 'Other'];
-const statuses = ['สำรอง', 'ใช้งาน', 'รออนุมัติส่งซ่อม', 'กำลังซ่อม', 'ยืม', 'เสีย'];
+const statuses = ['สำรอง', 'ใช้งาน', 'รออนุมัติส่งซ่อม', 'กำลังซ่อม', 'เสีย'];
 const departments = [
   "Management", "Human Resources", "Admin", "Accounting", "Finance",
   "Information Technology", "Sales", "Modern & Online Trade",
@@ -38,7 +37,7 @@ const departments = [
 const emptyForm = {
   asset_tag: '', name: '', category: '', brand: '', model: '',
   serial_number: '', status: '', assigned_to: '', department: '',
-  purchase_date: '', purchase_price: '', warranty_expire: '', image_url: '',
+  purchase_date: '', purchase_price: '', warranty_expire: '',
 };
 
 const emptyMoveForm = { device_id: '', department: '', assigned_to: '' };
@@ -65,6 +64,10 @@ export default function Device() {
   const [moveSaving, setMoveSaving] = useState(false);
   const [moveCloseConfirmOpen, setMoveCloseConfirmOpen] = useState(false);
 
+  // ✅ role ของผู้ใช้ปัจจุบัน — guest ดูได้อย่างเดียว ห้ามเพิ่มอุปกรณ์ใหม่
+  const [userRole, setUserRole] = useState(null);
+  const isGuest = userRole === 'guest';
+
   const load = async () => {
     setLoading(true);
     const { data } = await supabase.from('devices').select('*').order('created_at', { ascending: false });
@@ -72,8 +75,16 @@ export default function Device() {
     setLoading(false);
   };
 
+  const loadUserRole = async () => {
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) return;
+    const { data } = await supabase.from('profiles').select('role').eq('id', user.id).single();
+    setUserRole(data?.role || 'user');
+  };
+
   useEffect(() => {
     load();
+    loadUserRole();
 
     const channel = supabase
       .channel('realtime-devices-page')
@@ -114,6 +125,8 @@ export default function Device() {
   });
 
   const openAdd = () => {
+    // ✅ กันไว้อีกชั้น (defense in depth) — guest ห้ามเปิดฟอร์มเพิ่มอุปกรณ์ แม้ปุ่มจะถูก disable ไว้แล้ว
+    if (isGuest) return;
     setEditItem(null);
     setForm(emptyForm);
     setErrors({});
@@ -131,6 +144,8 @@ export default function Device() {
   };
 
   const handleExportXLSX = () => {
+    // ✅ กันไว้อีกชั้น (defense in depth) — guest ห้ามดาวน์โหลดรายงาน แม้ปุ่มจะถูก disable ไว้แล้ว
+    if (isGuest) return;
     if (!filtered.length) {
       alert("ไม่มีข้อมูลอุปกรณ์ให้ดาวน์โหลดตามเงื่อนไขที่เลือก");
       return;
@@ -147,7 +162,6 @@ export default function Device() {
       'วันหมดประกัน': d.warranty_expire || '',
       'วันที่สร้างรายการ': d.created_at || '',
       'วันที่แก้ไขล่าสุด': d.updated_at || '',
-      'ลิงก์รูปภาพ': d.image_url || '',
       'อัปเดตล่าสุด': d.last_updated || '',
       'บริษัท': d.company || '',
       'ช่องทางติดต่อบริษัท': d.company_contact || '',
@@ -174,6 +188,12 @@ export default function Device() {
   };
 
   const handleSave = async () => {
+    // ✅ กันไว้อีกชั้น — guest ห้ามบันทึกอุปกรณ์ใหม่แม้จะเรียกฟังก์ชันนี้ตรงๆ
+    if (isGuest) {
+      alert('บัญชี guest ดูข้อมูลได้อย่างเดียว ไม่สามารถเพิ่มอุปกรณ์ได้');
+      return;
+    }
+
     const newErrors = {};
     if (!form.asset_tag?.trim()) newErrors.asset_tag = "กรุณากรอก Asset Tag";
     if (!form.assigned_to?.trim()) newErrors.assigned_to = "กรุณากรอกมอบหมายให้";
@@ -198,7 +218,6 @@ export default function Device() {
       status: form.status,
       company: form.company,
       company_contact: form.company_contact,
-      image_url: form.image_url || null,
       purchase_date: form.purchase_date || null,
       warranty_expire: form.warranty_expire || null,
       purchase_price: form.purchase_price ? Number(form.purchase_price) : null,
@@ -252,7 +271,13 @@ export default function Device() {
             รายการอุปกรณ์
           </h2>
         </div>
-        <Button onClick={openAdd} className="gap-2 w-full sm:w-auto">
+        {/* ✅ guest เห็นปุ่มเพิ่มอุปกรณ์อยู่เหมือนเดิม แต่กดไม่ได้และสีจางลง (opacity-30) */}
+        <Button
+          onClick={openAdd}
+          disabled={isGuest}
+          className={`gap-2 w-full sm:w-auto ${isGuest ? 'opacity-30 pointer-events-none' : ''}`}
+          title={isGuest ? 'บัญชี guest ดูข้อมูลได้อย่างเดียว ไม่สามารถเพิ่มอุปกรณ์ได้' : undefined}
+        >
           <Plus size={16} /> เพิ่มอุปกรณ์
         </Button>
       </div>
@@ -266,9 +291,11 @@ export default function Device() {
         <Button
           variant="outline"
           onClick={handleExportXLSX}
-          className="gap-2 w-full sm:w-auto shrink-0"
+          disabled={isGuest}
+          className={`gap-2 w-full sm:w-auto shrink-0 ${isGuest ? 'opacity-30 pointer-events-none' : ''}`}
+          title={isGuest ? 'บัญชี guest ดาวน์โหลดรายงานไม่ได้' : undefined}
         >
-          <Download size={16} /> Download Report
+          <Download size={16} /> ดาวน์โหลดรายงาน
         </Button>
       </div>
 

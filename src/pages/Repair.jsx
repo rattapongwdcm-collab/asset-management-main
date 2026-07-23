@@ -53,6 +53,10 @@ export default function Repair() {
   const [showPrintPreview, setShowPrintPreview] = useState(false);
   const [printData, setPrintData] = useState(null);
 
+  // ✅ role ของผู้ใช้ปัจจุบัน — guest ดูได้อย่างเดียว ห้ามแจ้งซ่อม
+  const [userRole, setUserRole] = useState(null);
+  const isGuest = userRole === 'guest';
+
   // โหลดข้อมูลใบซ่อม + อุปกรณ์ทั้งหมดพร้อมกัน
   const loadData = async () => {
     setLoading(true);
@@ -71,8 +75,16 @@ export default function Repair() {
     }
   };
 
+  const loadUserRole = async () => {
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) return;
+    const { data } = await supabase.from('profiles').select('role').eq('id', user.id).single();
+    setUserRole(data?.role || 'user');
+  };
+
   useEffect(() => {
     loadData();
+    loadUserRole();
   }, []);
 
   // รีเซ็ตฟอร์ม + ปิด dropdown ทุกครั้งที่เปิด modal ใหม่
@@ -95,6 +107,12 @@ export default function Repair() {
     document.addEventListener('mousedown', handleClickOutside);
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
+
+  // ✅ เปิด modal แจ้งซ่อม — กันไว้อีกชั้น (defense in depth) guest ห้ามเปิดฟอร์มแจ้งซ่อม แม้ปุ่มจะถูก disable ไว้แล้ว
+  const openRepairModal = () => {
+    if (isGuest) return;
+    setIsModalOpen(true);
+  };
 
   const handleDeviceChange = (deviceId) => {
     const selectedDevice = devices.find(d => d.id === deviceId);
@@ -123,6 +141,12 @@ export default function Repair() {
 
   // ส่งคำขอแจ้งซ่อม: สร้าง repair + approval พร้อมกัน แล้วอัปเดตสถานะอุปกรณ์
   const handleSubmitData = async () => {
+    // ✅ กันไว้อีกชั้น — guest ห้ามส่งคำขอแจ้งซ่อมแม้จะเรียกฟังก์ชันนี้ตรงๆ
+    if (isGuest) {
+      setError('บัญชี guest ดูข้อมูลได้อย่างเดียว ไม่สามารถแจ้งซ่อมได้');
+      return;
+    }
+
     if (!form.device_id || !form.issue_description.trim() || !form.reported_by.trim()) {
       setError('กรุณากรอกข้อมูลให้ครบถ้วน');
       return;
@@ -317,7 +341,13 @@ export default function Repair() {
           <Wrench className="text-primary" size={22} />
           รายการซ่อม
         </h2>
-        <Button onClick={() => setIsModalOpen(true)} className="gap-1.5 w-full sm:w-auto">
+        {/* ✅ guest เห็นปุ่มแจ้งซ่อมอยู่เหมือนเดิม แต่กดไม่ได้และสีจางลง (opacity-30) */}
+        <Button
+          onClick={openRepairModal}
+          disabled={isGuest}
+          className={`gap-1.5 w-full sm:w-auto ${isGuest ? 'opacity-30 pointer-events-none' : ''}`}
+          title={isGuest ? 'บัญชี guest ดูข้อมูลได้อย่างเดียว ไม่สามารถแจ้งซ่อมได้' : undefined}
+        >
           <Plus size={16} /> แจ้งซ่อม
         </Button>
       </div>

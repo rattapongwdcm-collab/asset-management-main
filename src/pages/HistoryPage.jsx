@@ -46,7 +46,12 @@ export default function HistoryPage() {
 
   useEffect(() => { loadData(); }, []);
 
-  const getDeviceLogs = (deviceId) => historyLogs.filter(log => log.device_id === deviceId);
+  // ✅ sort ซ้ำตาม created_at desc เสมอ (ไม่พึ่งพาลำดับจากการ query อย่างเดียว)
+  // กันกรณี timestamp ชนกันหรือมี log ถูกเพิ่มเข้ามาไม่เรียงลำดับ ให้ log ล่าสุดอยู่บนสุดเสมอ
+  const getDeviceLogs = (deviceId) =>
+    historyLogs
+      .filter(log => log.device_id === deviceId)
+      .sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
 
   const filteredDevices = devices.filter(d => {
     const q = searchTerm.toLowerCase().trim();

@@ -11,30 +11,16 @@ import {
 import {
   Plus, Search, Download, PackageOpen, PackagePlus, PackageMinus, Loader2,
 } from 'lucide-react';
-// หมายเหตุ: เอา Trash2 ออก เพราะ import มาแล้วไม่ได้ใช้งานที่ไหนในไฟล์นี้
 import * as XLSX from 'xlsx';
 
-// ── ค่าคงที่ / ฟังก์ชันช่วยคำนวณ ──────────────────────────────
-const statusColors = {
-  'สำรอง': { bg: '#DCFCE7', color: '#166534' },
-  'หมด': { bg: '#FFE4E6', color: '#9F1239' },
-};
-
-// คำนวณสถานะอัตโนมัติจากจำนวนคงเหลือ — 0 = หมด, มากกว่า 0 = สำรอง (สถานะมีแค่ 2 ค่านี้เท่านั้น)
-const computeStatus = (qty) => (Number(qty) > 0 ? 'สำรอง' : 'หมด');
-
-const FIXED_DEPARTMENT = 'สต๊อก'; // แผนกของอุปกรณ์เสริมทุกชิ้น fix ไว้เป็น "สต๊อก" เสมอ ไม่ต้องเลือก
-
-// จัดรูปแบบราคาต่อหน่วยเป็นสกุลเงินบาท
-const formatPrice = (price) => {
-  if (price === null || price === undefined || price === '') {
-    return <span className="text-muted-foreground/40 font-mono text-xs">—</span>;
-  }
-  return <span>฿{Number(price).toLocaleString('th-TH')}</span>;
-};
+import DepartmentDropdown from '@/components/Accessories/DepartmentDropdown';
+import AccessoryMobileCard from '@/components/Accessories/AccessoryMobileCard';
+import AccessoryTableRow from '@/components/Accessories/AccessoryTableRow';
+import { computeStatus } from '@/components/Accessories/accessoryHelpers';
+import { DEPARTMENTS } from '@/lib/departments';
 
 const emptyForm = {
-  name: '', brand: '', quantity: '1', unit: '', price: '',
+  name: '', brand: '', quantity: '1', unit: '', price: '', department: '',
 };
 
 export default function Accessories() {
@@ -43,9 +29,13 @@ export default function Accessories() {
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
 
-  // ── State: สิทธิ์ผู้ใช้ปัจจุบัน (admin ปรับสต็อคได้ทันที / user ต้องส่งคำขออนุมัติ) ──
+  // ── State: สิทธิ์ผู้ใช้ปัจจุบัน ──
+  // admin        = ปรับสต็อคได้ทันที + เพิ่ม/ลบอุปกรณ์เสริมได้
+  // user (ทั่วไป) = ต้องส่งคำขออนุมัติทุกอย่าง (เพิ่ม/ตัดสต็อค, ลบ)
+  // guest        = ดูได้อย่างเดียว + ตัดสต๊อคได้ (ผ่านคำขออนุมัติเหมือน user) แต่เพิ่มสต็อค/ลบทำไม่ได้เลย
   const [userRole, setUserRole] = useState(null);
   const isAdmin = userRole === 'admin';
+  const isGuest = userRole === 'guest';
 
   // ── State: ฟอร์มเพิ่ม/ดูรายละเอียดอุปกรณ์เสริม ──
   // dialogMode: 'add' = ฟอร์มเพิ่มใหม่ แก้ไขได้ / 'view' = คลิกจากแถว โชว์แบบเดียวกันแต่ disable หมด
@@ -74,6 +64,11 @@ export default function Accessories() {
 
   // ── State: ดาวน์โหลดรายงาน ──
   const [reportLoading, setReportLoading] = useState(false);
+  // เดือนที่จะใช้ดึงรายงาน (รูปแบบ YYYY-MM) — ค่าเริ่มต้นเป็นเดือนปัจจุบัน
+  const [reportMonth, setReportMonth] = useState(() => {
+    const now = new Date();
+    return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+  });
 
   // ── Data loading ──────────────────────────────────────────────
 
@@ -88,7 +83,7 @@ export default function Accessories() {
     setLoading(false);
   };
 
-  // โหลด role ของผู้ใช้ที่ล็อกอินอยู่ ใช้ตัดสินว่าจะปรับสต็อคทันทีหรือต้องขออนุมัติ
+  // โหลด role ของผู้ใช้ที่ล็อกอินอยู่ ใช้ตัดสินว่าจะปรับสต็อคทันทีหรือต้องขออนุมัติ หรือดูได้อย่างเดียว (guest)
   const loadUserRole = async () => {
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) return;
@@ -149,20 +144,36 @@ export default function Accessories() {
       d.department?.toLowerCase().includes(keyword);
   });
 
+  // ใช้ลิสต์แผนกคงที่ (DEPARTMENTS) เป็นตัวเลือกในดรอปดาวน์ — ตรงกับหน้า Devices
+  const departmentOptions = DEPARTMENTS;
+
   // ── รายงาน ────────────────────────────────────────────────────
   // ส่งออกประวัติการปรับสต็อค (ตัด/เพิ่ม) ที่อนุมัติแล้วเป็นไฟล์ .xlsx
   // ดึงจากตาราง approvals (request_type = 'edit_accessory', status = 'Approved')
   // join กับ profiles เอาชื่อผู้ขอ และ accessories เอารายละเอียดอุปกรณ์
   // (ตอนนี้แอดมินก็ insert เข้า approvals แบบ Approved ทันทีเหมือนกัน จึงโผล่ใน report นี้ด้วย)
+  // แต่ละธุรกรรม (ตัด/เพิ่ม 1 ครั้ง) = 1 แถว เหมือนเดิม (ไม่รวมแถว)
+  // ✅ เลือกเดือนที่จะดาวน์โหลดได้ (state reportMonth) — ดึงเฉพาะรายการที่อนุมัติภายในเดือนที่เลือกเท่านั้น
+  // เดือนอื่นๆ ไม่ได้หายไปไหน ยังอยู่ในฐานข้อมูลปกติ แค่เลือกดูทีละเดือนผ่านตัวเลือกเดือนด้านบน
   // ⚠️ คอลัมน์ "จำนวน" คือคงเหลือปัจจุบัน ณ ตอนดาวน์โหลด ไม่ใช่คงเหลือ ณ เวลาที่ทำรายการนั้น
   const handleDownloadReport = async () => {
+    // ✅ กันไว้อีกชั้น (defense in depth) — guest ห้ามดาวน์โหลดรายงาน แม้ปุ่มจะถูก disable ไว้แล้ว
+    if (isGuest) return;
     setReportLoading(true);
+
+    // ขอบเขตของเดือนที่เลือก (reportMonth รูปแบบ "YYYY-MM"): ตั้งแต่วันที่ 1 เวลา 00:00
+    // ถึงก่อนวันที่ 1 ของเดือนถัดไป
+    const [reportYear, reportMonthNum] = reportMonth.split('-').map(Number);
+    const startOfMonth = new Date(reportYear, reportMonthNum - 1, 1).toISOString();
+    const startOfNextMonth = new Date(reportYear, reportMonthNum, 1).toISOString();
 
     const { data, error } = await supabase
       .from('approvals')
       .select('*, profiles (email, full_name), accessories (name, brand, department, status, price, unit, quantity)')
       .eq('request_type', 'edit_accessory')
       .eq('status', 'Approved')
+      .gte('created_at', startOfMonth)
+      .lt('created_at', startOfNextMonth)
       .order('created_at', { ascending: false });
 
     if (error) {
@@ -173,7 +184,7 @@ export default function Accessories() {
     }
 
     const headers = [
-      'ชื่อผู้ใช้', 'ชื่ออุปกรณ์เสริม', 'ยี่ห้อ', 'แผนก',
+      'วันที่/เวลา', 'ชื่อผู้ใช้', 'ชื่ออุปกรณ์เสริม', 'ยี่ห้อ', 'แผนก',
       'สถานะ', 'ราคา', 'จำนวน', 'หน่วย', 'ตัดสต็อก', 'เพิ่มสต็อก',
     ];
 
@@ -182,6 +193,7 @@ export default function Accessories() {
       const delta = row.changed_fields?.quantity_delta ?? 0;
 
       return [
+        row.created_at ? new Date(row.created_at).toLocaleString('th-TH') : '—',
         row.profiles?.full_name || row.profiles?.email || '—',
         accessory.name || row.accessory_name || '—',
         accessory.brand || '',
@@ -200,7 +212,7 @@ export default function Accessories() {
 
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, 'ประวัติปรับสต็อค');
-    XLSX.writeFile(wb, `accessories-transactions-${new Date().toISOString().slice(0, 10)}.xlsx`);
+    XLSX.writeFile(wb, `accessories-transactions-${reportMonth}.xlsx`);
 
     setReportLoading(false);
   };
@@ -225,6 +237,7 @@ export default function Accessories() {
       quantity: String(item.quantity ?? ''),
       unit: item.unit || '',
       price: item.price ?? '',
+      department: item.department || '',
     });
     setErrors({});
     setViewItemId(item.id);
@@ -245,6 +258,7 @@ export default function Accessories() {
     const newErrors = {};
     if (!form.name?.trim()) newErrors.name = 'กรุณากรอกชื่ออุปกรณ์เสริม';
     if (!form.quantity || Number(form.quantity) < 0) newErrors.quantity = 'กรุณากรอกจำนวนให้ถูกต้อง';
+    if (!form.department?.trim()) newErrors.department = 'กรุณาเลือกหรือกรอกแผนก';
 
     setErrors(newErrors);
     if (Object.keys(newErrors).length > 0) return;
@@ -253,12 +267,12 @@ export default function Accessories() {
 
     const payload = {
       name: form.name,
-      brand: form.brand || null, // แก้: เดิม key นี้ซ้ำกัน 2 บรรทัด ตัดเหลือบรรทัดเดียว
+      brand: form.brand || null,
       quantity: Number(form.quantity),
       unit: form.unit || null,
       price: form.price !== '' ? Number(form.price) : null,
       status: computeStatus(form.quantity),
-      department: FIXED_DEPARTMENT,
+      department: form.department.trim(),
     };
 
     const result = await supabase.from('accessories').insert([payload]).select();
@@ -275,10 +289,11 @@ export default function Accessories() {
     setSaving(false);
   };
 
-  // ── ลบอุปกรณ์เสริม (ต้องผ่านอนุมัติเสมอ ไม่ว่า role ไหน) ──────────
+  // ── ลบอุปกรณ์เสริม (ต้องผ่านอนุมัติเสมอ ไม่ว่า role ไหน — ยกเว้น guest ที่ทำไม่ได้เลย) ──
 
   // กดลบจาก dialog view → ปิด dialog view แล้วเปิด dialog ยืนยันลบต่อ
   const handleRequestDeleteFromView = () => {
+    if (isGuest) return; // กันไว้อีกชั้น — guest ไม่มีสิทธิ์ขอลบ (ปุ่มถูกซ่อนไปแล้วในหน้า UI)
     if (!viewItemId) return;
     setDialogOpen(false);
     setDeleteId(viewItemId);
@@ -287,6 +302,10 @@ export default function Accessories() {
   // ส่งคำขอลบเข้าระบบอนุมัติ (ไม่ลบทันที ไม่ว่าจะเป็น role ไหน) — ใช้ตาราง approvals เดียวกับหน้าอุปกรณ์
   // request_type: 'delete_accessory' ต้องมี branch รองรับใน Approve.jsx ด้วย
   const handleDelete = async () => {
+    if (isGuest) {
+      alert('บัญชี guest ดูข้อมูลได้อย่างเดียว ไม่สามารถขอลบอุปกรณ์เสริมได้');
+      return;
+    }
     if (!deleteId) return;
     setDeleting(true);
 
@@ -313,6 +332,11 @@ export default function Accessories() {
       setDeleting(false);
       return;
     }
+
+    // อัปเดต pendingDeleteIds ทันที ไม่รอ Realtime (เผื่อ Realtime ยังไม่ได้เปิด replication
+    // ให้ตาราง approvals หรือมี delay) — ล็อกแถวนี้ให้เห็นผลทันทีโดยไม่ต้องรีเฟรชเอง
+    setPendingDeleteIds((prev) => new Set(prev).add(deleteId));
+
     setDeleteId(null);
     setDeleting(false);
   };
@@ -320,6 +344,11 @@ export default function Accessories() {
   // ── เพิ่มสต็อค / ตัดสต๊อค ──────────────────────────────────────
 
   const openStockDialog = (item, mode) => {
+    // ✅ guest ทำได้แค่ "ตัดสต๊อค" (out) เท่านั้น — กันไว้อีกชั้นเผื่อมีทางเรียกเข้ามาตรงๆ
+    if (isGuest && mode === 'in') {
+      alert('บัญชี guest ดูข้อมูลได้อย่างเดียว และตัดสต๊อคได้เท่านั้น ไม่สามารถเพิ่มสต็อคได้');
+      return;
+    }
     setStockItem(item);
     setStockMode(mode);
     setStockQty('');
@@ -334,6 +363,12 @@ export default function Accessories() {
   const handleStockSubmit = async () => {
     if (!stockItem) return;
     setStockError('');
+
+    // ✅ กันไว้อีกชั้น — guest ห้ามเพิ่มสต็อคแม้จะเรียกฟังก์ชันนี้ตรงๆ
+    if (isGuest && stockMode === 'in') {
+      setStockError('บัญชี guest ไม่สามารถเพิ่มสต็อคได้');
+      return;
+    }
 
     const qty = Number(stockQty);
     if (!qty || qty <= 0) {
@@ -395,7 +430,8 @@ export default function Accessories() {
       return;
     }
 
-    // ── ผู้ใช้ทั่วไป: ส่งเป็นคำขอเข้า approvals รอแอดมินอนุมัติ ──
+    // ── ผู้ใช้ทั่วไป / guest: ส่งเป็นคำขอเข้า approvals รอแอดมินอนุมัติ ──
+    // (guest จะเข้าทางนี้ได้แค่ mode 'out' เท่านั้น เพราะเช็คกันไว้ตั้งแต่ต้นฟังก์ชันแล้ว)
     // เก็บเป็น "ส่วนต่าง" (delta) ไม่ใช่ค่าคงเหลือที่คำนวณไว้ล่วงหน้า เพื่อให้หลายคนส่งคำขอ
     // พร้อมกันบนชิ้นเดียวกันได้ โดยตัวเลขจริงจะถูกคำนวณทับกันตอนแอดมินกดอนุมัติแต่ละคำขอ
     // (เช็คความพอเพียงแบบคร่าวๆ ตรงนี้จากคงเหลือ ณ ตอนกด เป็นแค่ sanity check เบื้องต้น
@@ -454,7 +490,7 @@ export default function Accessories() {
         )}
       </div>
 
-      {/* ── แถบค้นหา + ปุ่มดาวน์โหลดรายงาน ── */}
+      {/* ── แถบค้นหา + เลือกเดือน + ปุ่มดาวน์โหลดรายงาน ── */}
       <div className="flex flex-col sm:flex-row gap-3">
         <div className="relative flex-1 min-w-0 sm:min-w-48">
           <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
@@ -465,20 +501,30 @@ export default function Accessories() {
             onChange={e => setSearch(e.target.value)}
           />
         </div>
+        {/* เลือกเดือนที่จะดาวน์โหลดรายงาน — ค่าเริ่มต้นเป็นเดือนปัจจุบัน
+            onClick เรียก showPicker() เพื่อให้คลิกตรงไหนของช่องก็เปิดปฏิทินได้เลย ไม่ต้องเล็งคลิกแค่ไอคอน */}
+        <Input
+          type="month"
+          className="h-10 w-full sm:w-40 cursor-pointer"
+          value={reportMonth}
+          onChange={(e) => setReportMonth(e.target.value)}
+          onClick={(e) => e.target.showPicker?.()}
+          disabled={isGuest}
+        />
         <Button
           variant="outline"
-          className="gap-2 w-full sm:w-auto"
+          className={`gap-2 w-full sm:w-auto ${isGuest ? 'opacity-30 pointer-events-none' : ''}`}
           onClick={handleDownloadReport}
-          disabled={reportLoading}
+          disabled={reportLoading || isGuest}
+          title={isGuest ? 'บัญชี guest ดาวน์โหลดรายงานไม่ได้' : undefined}
         >
           {reportLoading ? <Loader2 className="animate-spin" size={16} /> : <Download size={16} />}
-          Download Report
+          ดาวน์โหลดรายงาน
         </Button>
       </div>
 
+
       {/* ── MOBILE VIEW (< md): การ์ดแทนตารางที่มี 8 คอลัมน์ (แน่นเกินจอมือถือ) ── */}
-      {/* ดีไซน์การ์ด: ชื่อ + badge สถานะด้านบน, รายละเอียดยี่ห้อ/แผนกเป็น 2 คอลัมน์,
-          แถบเตือนสีเหลืองถ้ามีคำขอลบค้างอยู่ และไอคอนจัดการ (ดู/เพิ่ม/ตัดสต็อค) แถวล่างขวา */}
       <div className="md:hidden space-y-3">
         {loading && (
           <div className="text-center py-10 text-muted-foreground bg-card border border-border rounded-xl">
@@ -492,81 +538,17 @@ export default function Accessories() {
           </div>
         )}
 
-        {!loading && filtered.map((item) => {
-          const isLocked = pendingDeleteIds.has(item.id); // มีคำขอ "ลบ" ค้างอยู่ รอแอดมินอนุมัติ
-
-          return (
-            <div
-              key={item.id}
-              className="bg-card border border-border rounded-xl p-4 space-y-3 cursor-pointer"
-              onClick={() => openView(item)}
-            >
-              {/* แถวบน: ชื่ออุปกรณ์ + badge สถานะ */}
-              <div className="flex items-start justify-between gap-2">
-                <p className="font-semibold text-sm text-foreground truncate">{item.name}</p>
-                <span
-                  className="px-2 py-1 rounded-full text-xs font-medium shrink-0"
-                  style={{
-                    background: statusColors[item.status]?.bg || '#F1F5F9',
-                    color: statusColors[item.status]?.color || '#000',
-                  }}
-                >
-                  {item.status}
-                </span>
-              </div>
-
-              {/* รายละเอียด 2 คอลัมน์: ยี่ห้อ / แผนก และ ราคา / จำนวน+หน่วย */}
-              <div className="grid grid-cols-2 gap-y-1.5 text-xs">
-                <div>
-                  <span className="text-muted-foreground">ยี่ห้อ: </span>
-                  <span className="text-foreground">{item.brand || '-'}</span>
-                </div>
-                <div>
-                  <span className="text-muted-foreground">แผนก: </span>
-                  <span className="text-foreground">{item.department || '-'}</span>
-                </div>
-                <div>
-                  <span className="text-muted-foreground">ราคา: </span>
-                  <span className="text-foreground">{formatPrice(item.price)}</span>
-                </div>
-                <div>
-                  <span className="text-muted-foreground">จำนวน: </span>
-                  <span className="text-foreground">{item.quantity} {item.unit || ''}</span>
-                </div>
-              </div>
-
-              {/* แถวล่าง: แถบเตือนคำขอลบค้าง (ถ้ามี) + ไอคอนจัดการ */}
-              <div className="flex items-center justify-between pt-1">
-                {isLocked ? (
-                  <span className="text-[11px] font-medium px-2 py-1 rounded-md bg-amber-50 text-amber-600">
-                    ⚠ รออนุมัติลบ
-                  </span>
-                ) : <span />}
-
-                <div className="flex gap-1">
-                  <Button
-                    variant="ghost" size="icon"
-                    disabled={isLocked}
-                    className={`h-8 w-8 text-emerald-600 hover:text-emerald-700 hover:bg-emerald-50 ${isLocked ? 'opacity-30 pointer-events-none' : ''}`}
-                    title={isLocked ? 'ล็อกไว้ระหว่างรออนุมัติลบ' : 'เพิ่มสต็อค'}
-                    onClick={(e) => { e.stopPropagation(); openStockDialog(item, 'in'); }}
-                  >
-                    <PackagePlus size={16} />
-                  </Button>
-                  <Button
-                    variant="ghost" size="icon"
-                    disabled={isLocked}
-                    className={`h-8 w-8 text-amber-600 hover:text-amber-700 hover:bg-amber-50 ${isLocked ? 'opacity-30 pointer-events-none' : ''}`}
-                    title={isLocked ? 'ล็อกไว้ระหว่างรออนุมัติลบ' : 'ตัดสต๊อค'}
-                    onClick={(e) => { e.stopPropagation(); openStockDialog(item, 'out'); }}
-                  >
-                    <PackageMinus size={16} />
-                  </Button>
-                </div>
-              </div>
-            </div>
-          );
-        })}
+        {!loading && filtered.map((item) => (
+          <AccessoryMobileCard
+            key={item.id}
+            item={item}
+            isLocked={pendingDeleteIds.has(item.id)}
+            isGuest={isGuest}
+            onView={openView}
+            onStockIn={(i) => openStockDialog(i, 'in')}
+            onStockOut={(i) => openStockDialog(i, 'out')}
+          />
+        ))}
       </div>
 
       {/* ── DESKTOP / TABLET VIEW (md ขึ้นไป): ตารางเดิม ── */}
@@ -602,65 +584,17 @@ export default function Accessories() {
               </TableRow>
             )}
 
-            {!loading && filtered.map((item) => {
-              const isLocked = pendingDeleteIds.has(item.id); // มีคำขอ "ลบ" ค้างอยู่ รอแอดมินอนุมัติ
-
-              return (
-                <TableRow
-                  key={item.id}
-                  className="cursor-pointer"
-                  onClick={() => openView(item)}
-                  title={isLocked ? 'รายการนี้มีคำขอลบค้างอยู่ รอการอนุมัติ' : 'คลิกเพื่อดูรายละเอียด'}
-                >
-                  <TableCell className="font-medium">
-                    {item.name}
-                    {isLocked && (
-                      <span className="ml-2 text-[10px] font-medium px-1.5 py-0.5 rounded bg-amber-50 text-amber-600 align-middle">
-                        รออนุมัติลบ
-                      </span>
-                    )}
-                  </TableCell>
-                  <TableCell>{item.brand || '-'}</TableCell>
-                  <TableCell>{item.department || '-'}</TableCell>
-                  <TableCell>
-                    <span
-                      className="px-2 py-1 rounded-md text-xs font-medium"
-                      style={{
-                        background: statusColors[item.status]?.bg || '#F1F5F9',
-                        color: statusColors[item.status]?.color || '#000',
-                      }}
-                    >
-                      {item.status}
-                    </span>
-                  </TableCell>
-                  <TableCell>{formatPrice(item.price)}</TableCell>
-                  <TableCell className="text-center">{item.quantity}</TableCell>
-                  <TableCell className="text-center">{item.unit || '-'}</TableCell>
-                  <TableCell className="text-right">
-                    <div className="flex justify-end gap-1">
-                      <Button
-                        variant="ghost" size="icon"
-                        disabled={isLocked}
-                        className={`h-8 w-8 text-emerald-600 hover:text-emerald-700 hover:bg-emerald-50 ${isLocked ? 'opacity-30 pointer-events-none' : ''}`}
-                        title={isLocked ? 'ล็อกไว้ระหว่างรออนุมัติลบ' : 'เพิ่มสต็อค'}
-                        onClick={(e) => { e.stopPropagation(); openStockDialog(item, 'in'); }}
-                      >
-                        <PackagePlus size={16} />
-                      </Button>
-                      <Button
-                        variant="ghost" size="icon"
-                        disabled={isLocked}
-                        className={`h-8 w-8 text-amber-600 hover:text-amber-700 hover:bg-amber-50 ${isLocked ? 'opacity-30 pointer-events-none' : ''}`}
-                        title={isLocked ? 'ล็อกไว้ระหว่างรออนุมัติลบ' : 'ตัดสต๊อค'}
-                        onClick={(e) => { e.stopPropagation(); openStockDialog(item, 'out'); }}
-                      >
-                        <PackageMinus size={16} />
-                      </Button>
-                    </div>
-                  </TableCell>
-                </TableRow>
-              );
-            })}
+            {!loading && filtered.map((item) => (
+              <AccessoryTableRow
+                key={item.id}
+                item={item}
+                isLocked={pendingDeleteIds.has(item.id)}
+                isGuest={isGuest}
+                onView={openView}
+                onStockIn={(i) => openStockDialog(i, 'in')}
+                onStockOut={(i) => openStockDialog(i, 'out')}
+              />
+            ))}
           </TableBody>
         </Table>
       </div>
@@ -669,7 +603,7 @@ export default function Accessories() {
         ── Dialog เพิ่ม/ดูรายละเอียด ──
         ฟอร์มเดียวใช้ 2 โหมด:
         - add  : เพิ่มอุปกรณ์เสริมใหม่ แก้ไขได้ทุกช่อง ปุ่ม ยกเลิก + บันทึก (เฉพาะแอดมิน)
-        - view : คลิกจากแถว โชว์ค่าเดิมแบบ readonly ทุกช่อง (disabled) ปุ่ม ยกเลิก + ลบ เท่านั้น
+        - view : คลิกจากแถว โชว์ค่าเดิมแบบ readonly ทุกช่อง (disabled) ปุ่ม ยกเลิก + ลบ (ยกเว้น guest ไม่เห็นปุ่มลบ)
       */}
       <Dialog open={dialogOpen} onOpenChange={(open) => !open && closeDialog()}>
         <DialogContent className="w-[calc(100vw-2rem)] sm:max-w-lg max-h-[85vh] overflow-y-auto">
@@ -733,15 +667,27 @@ export default function Accessories() {
               />
             </div>
 
-            {/* สถานะและแผนก: คำนวณ/กำหนดอัตโนมัติเสมอ ไม่ให้แก้เอง จึง disabled ทั้งสองโหมด */}
+            {/* แผนก: โหมด add = ดรอปดาวน์ค้นหา (เหมือน SearchableDropdown ใน DeviceFormDialog.jsx)
+                โหมด view = แสดงค่าเดิมแบบ disabled เหมือนช่องอื่นๆ ไม่ต้องมีดรอปดาวน์ */}
+            {isView ? (
+              <div className="space-y-1">
+                <label className="text-sm font-medium">แผนก</label>
+                <Input value={form.department} disabled />
+              </div>
+            ) : (
+              <DepartmentDropdown
+                value={form.department}
+                onChange={(val) => setForm((f) => ({ ...f, department: val }))}
+                options={departmentOptions}
+                error={errors.department}
+                onClearError={() => setErrors((prev) => ({ ...prev, department: '' }))}
+              />
+            )}
+
+            {/* สถานะ: คำนวณอัตโนมัติเสมอ ไม่ให้แก้เอง */}
             <div className="space-y-1">
               <label className="text-sm font-medium">สถานะ</label>
               <Input value={computeStatus(form.quantity)} disabled />
-            </div>
-
-            <div className="space-y-1">
-              <label className="text-sm font-medium">แผนก</label>
-              <Input value={FIXED_DEPARTMENT} disabled />
             </div>
           </div>
 
@@ -753,11 +699,10 @@ export default function Accessories() {
               <Button
                 variant="outline"
                 onClick={handleRequestDeleteFromView}
-                disabled={pendingDeleteIds.has(viewItemId)}
-                className={`text-xs hover:bg-[#111827] hover:text-white w-full sm:w-auto ${pendingDeleteIds.has(viewItemId) ? 'opacity-30 pointer-events-none' : ''}`}
-                title={pendingDeleteIds.has(viewItemId) ? 'มีคำขอลบค้างอยู่แล้ว รอการอนุมัติ' : 'ลบ'}
+                disabled={pendingDeleteIds.has(viewItemId) || isGuest}
+                className={`text-xs hover:bg-[#111827] hover:text-white w-full sm:w-auto ${(pendingDeleteIds.has(viewItemId) || isGuest) ? 'opacity-30 pointer-events-none' : ''}`}
+                title={isGuest ? 'บัญชี guest ขอลบไม่ได้' : (pendingDeleteIds.has(viewItemId) ? 'มีคำขอลบค้างอยู่แล้ว รอการอนุมัติ' : 'ลบ')}
               >
-                {/* แก้: เดิมข้อความ "ส่งอนุมัติขอลบ" ต่อกับ ternary ทำให้ปุ่มมี 2 ข้อความซ้อนกัน เหลือแบบเดียว */}
                 {pendingDeleteIds.has(viewItemId) ? 'รออนุมัติลบ' : 'ส่งอนุมัติขอลบ'}
               </Button>
             ) : (
@@ -784,7 +729,6 @@ export default function Accessories() {
               ยกเลิก
             </Button>
             <Button className="text-xs hover:bg-[#111827] hover:text-white w-full sm:w-auto gap-2" variant="outline" onClick={handleDelete} disabled={deleting}>
-              {/* แก้: เดิม {deleting} render ค่า boolean ตรงๆ ในปุ่ม (เห็นคำว่า "true/false" โผล่ตอนกำลังส่ง) เปลี่ยนเป็น spinner แบบเดียวกับปุ่มอื่น */}
               {deleting && <Loader2 className="animate-spin" size={16} />}
               ส่งคำขอลบ
             </Button>
@@ -807,7 +751,6 @@ export default function Accessories() {
             <span className={`font-semibold ${stockItem?.quantity === 0 ? 'text-red-600' : 'text-foreground'}`}>
               {stockItem?.quantity} {stockItem?.unit || ''}
             </span>
-            {/* แก้: ย้าย error message ออกมาเป็นบรรทัดของตัวเอง เดิมซ้อนอยู่ใน <span> เดียวกับคงเหลือ ทำให้ข้อความติดกัน */}
             {stockError && (
               <span className="block text-red-600 mt-1">{stockError}</span>
             )}
@@ -826,8 +769,9 @@ export default function Accessories() {
 
           {!isAdmin && (
             <p className="text-[11px] text-muted-foreground">
-              บัญชีของคุณเป็นผู้ใช้ทั่วไป การดำเนินการนี้จะถูกส่งเป็นคำขอ รอแอดมินอนุมัติก่อนจึงจะมีผลจริง
-              (สามารถส่งคำขอได้พร้อมกันหลายคน ระบบจะคำนวณให้ตอนอนุมัติ)
+              {isGuest
+                ? 'บัญชีของคุณเป็น guest การตัดสต๊อคนี้จะถูกส่งเป็นคำขอ รอแอดมินอนุมัติก่อนจึงจะมีผลจริง'
+                : 'บัญชีของคุณเป็นผู้ใช้ทั่วไป การดำเนินการนี้จะถูกส่งเป็นคำขอ รอแอดมินอนุมัติก่อนจึงจะมีผลจริง (สามารถส่งคำขอได้พร้อมกันหลายคน ระบบจะคำนวณให้ตอนอนุมัติ)'}
             </p>
           )}
 
